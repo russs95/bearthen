@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Bearthen
+Comment=An open source eBook reader for Ubuntu Touch
+Exec=qmlscene %U qml/Main.qml
+Icon=assets/bearthen.png
+Terminal=false
+Type=Application
+X-Ubuntu-Touch=true
+X-Ubuntu-Splash-Color=#2C5F2E
+X-Ubuntu-Splash-Show-Header=true

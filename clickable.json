@@ -1,0 +1,16 @@
+{
+  "minimum_clickable_version": "7.0.0",
+  "app_id": "bearthen.russs95",
+  "template": "pure-qml",
+  "architecture": "all",
+  "install_dir": "/opt/click.ubuntu.com/bearthen.russs95/current",
+  "build_dir": "build",
+  "src_dir": ".",
+  "kill": "bearthen.russs95",
+  "scripts": {
+    "postbuild": "echo 'Bearthen build complete.'"
+  },
+  "env_vars": {
+    "APP_ID": "bearthen.russs95"
+  }
+}
