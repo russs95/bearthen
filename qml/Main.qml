@@ -11,13 +11,16 @@ MainView {
     width: units.gu(45)
     height: units.gu(80)
 
-    // ── Theme ────────────────────────────────────────────────────────────────
-    theme.name: "Ubuntu.Components.Themes.SuruDark"
-
     // ── App-wide state ───────────────────────────────────────────────────────
     property int currentPage: 0
     property bool isLoggedIn: false
     property string userName: ""
+    property bool isDarkMode: true
+
+    // ── Theme — bound to isDarkMode so the switch in Settings drives it ───────
+    theme.name: isDarkMode
+        ? "Ubuntu.Components.Themes.SuruDark"
+        : "Ubuntu.Components.Themes.Ambiance"
 
     // ── Page stack ───────────────────────────────────────────────────────────
     PageStack {
