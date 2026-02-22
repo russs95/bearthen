@@ -148,10 +148,7 @@ Page {
                         width: parent.width - units.gu(5)
                         placeholderText: "Search 70,000 free books..."
                         color: "#FFFFFF"
-                        style: TextFieldStyle {
-                            background: Item {}
-                            placeholderTextColor: "#555555"
-                        }
+
                         inputMethodHints: Qt.ImhNoPredictiveText
 
                         onAccepted: {

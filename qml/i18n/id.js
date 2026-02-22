@@ -1,0 +1,30 @@
+.pragma library
+
+var strings = {
+    "Settings":                          "Pengaturan",
+    "Appearance":                        "Tampilan",
+    "Dark Mode":                         "Mode Gelap",
+    "Dark theme active":                 "Tema gelap aktif",
+    "Light theme active":                "Tema terang aktif",
+    "Language":                          "Bahasa",
+    "Reading":                           "Membaca",
+    "Auto-Bookmark":                     "Penanda Otomatis",
+    "Save position when closing a book": "Simpan posisi saat menutup buku",
+    "Keep Screen Awake":                 "Layar Tetap Menyala",
+    "Prevent sleep while reading":       "Cegah layar mati saat membaca",
+    "AI Connector":                      "Konektor AI",
+    "AI Endpoint URL":                   "URL Titik Akhir AI",
+    "AI Features":                       "Fitur AI",
+    "Translate, summarise, define":      "Terjemahkan, ringkas, definisikan",
+    "About":                             "Tentang",
+    "Open Source":                       "Sumber Terbuka",
+    "Your Library":                      "Perpustakaan Anda",
+    "Your library is empty":             "Perpustakaan Anda kosong",
+    "Discover Books":                    "Temukan Buku",
+    "Browse Free Books":                 "Jelajahi Buku Gratis",
+    "Import EPUB File":                  "Impor File EPUB",
+    "Library":                           "Pustaka",
+    "Discover":                          "Temukan",
+    "Account":                           "Akun",
+    "Mission":                           "Dirancang dari awal untuk ramah Bumi, Manusia & AI. Atur aplikasi agar mata Anda nyaman."
+}
