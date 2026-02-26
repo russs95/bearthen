@@ -7,7 +7,7 @@ Page {
 
     property var    book:            null
     property string bookDescription: ""
-    property string descStatus:      "Checking Open Library for book description…"
+    property string descStatus:      "Loading description…"
     property bool   descLoading:     false
 
     // Debug fields
@@ -16,43 +16,53 @@ Page {
     property string dbgFilePath:    ""
     property string dbgCoverSource: "none"
 
-    // Earthen palette
-    readonly property color earthBrown:      "#783508ff"
-    readonly property color earthBrownLight: "#783508ff"
-    readonly property color earthBrownDark:  "#783508ff"
+    // Earthen palette — original warm browns
+    readonly property color earthBrown:      "#6B3A20"
+    readonly property color earthBrownLight: "#8B5228"
+    readonly property color earthBrownMid:   "#6B3A20"
 
-    Component.onCompleted: {
-        if (book) {
-            // Always pull fresh from SQLite
-            var fresh = Library.getBook(book.id)
-            if (fresh) {
-                book = fresh
-                console.log("LibBookDetail — from DB:")
-                console.log("  cover_url:  ", fresh.cover_url)
-                console.log("  cover_local:", fresh.cover_local)
-                console.log("  epub_url:   ", fresh.epub_url)
-                console.log("  file_path:  ", fresh.file_path)
-            }
+    // Guard against re-entrant calls: book = fresh triggers onBookChanged
+    // which would call _initBook again → infinite recursion → stack overflow.
+    property bool _initialising: false
 
-            dbgCoverUrl    = book.cover_url    || book.cover || "(none)"
-            dbgEpubUrl     = book.epub_url     || "(none)"
-            dbgFilePath    = book.file_path    || "(none)"
-            dbgCoverSource = (book.cover_local && book.cover_local !== "")
-                             ? "local: " + book.cover_local
-                             : ((book.cover_url && book.cover_url !== "") || (book.cover && book.cover !== ""))
-                               ? "remote URL" : "none"
-
-            fetchDescription(book)
+    function _initBook(b) {
+        if (!b || _initialising) return
+        _initialising = true
+        var fresh = Library.getBook(b.id)
+        if (fresh) {
+            book = fresh          // triggers onBookChanged — guard blocks re-entry
+            b = fresh
         }
+        _initialising = false     // re-enable before any further work
+        dbgCoverUrl    = b.cover_url    || b.cover || "(none)"
+        dbgEpubUrl     = b.epub_url     || "(none)"
+        dbgFilePath    = b.file_path    || "(none)"
+        dbgCoverSource = (b.cover_local && b.cover_local !== "")
+                         ? "local: " + b.cover_local
+                         : ((b.cover_url && b.cover_url !== "")
+                            || (b.cover && b.cover !== ""))
+                           ? "remote URL" : "none"
+        bookDescription = ""
+        descStatus = "Loading description…"
+        fetchDescription(b)
     }
+
+    Component.onCompleted: { _initBook(book) }
+    onBookChanged:          { _initBook(book) }
 
     header: PageHeader {
         id: pageHeader
-        title:    libBookPage.book ? libBookPage.book.title : ""
-        subtitle: libBookPage.book
-                  ? (libBookPage.book.author_display || libBookPage.book.author || "") : ""
+        contents: Item {
+            anchors { fill: parent; leftMargin: units.gu(1) }
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Your Books"
+                fontSize: "large"
+                font.weight: Font.Light
+                color: root.isDarkMode ? "#A0673A" : "#6B3A20"
+            }
+        }
         StyleHints {
-            foregroundColor: "#4CAF50"
             backgroundColor: root.isDarkMode ? "#1A1A1A" : "#F5F5F5"
             dividerColor: "#2C5F2E"
         }
@@ -61,9 +71,11 @@ Page {
         ]
     }
 
-    Rectangle { anchors.fill: parent
+    Rectangle {
+        anchors.fill: parent
         color: root.isDarkMode ? "#121212" : "#FFFFFF"
-        Behavior on color { ColorAnimation { duration: 250 } } }
+        Behavior on color { ColorAnimation { duration: 250 } }
+    }
 
     Flickable {
         anchors { top: pageHeader.bottom; left: parent.left
@@ -80,7 +92,7 @@ Page {
             Rectangle {
                 width: parent.width
                 height: heroRow.height + units.gu(4)
-                color: root.isDarkMode ? "#0D1F0D" : "#E8F5E9"
+                color: root.isDarkMode ? "#1A0D06" : "#F5EAD0"
                 Behavior on color { ColorAnimation { duration: 250 } }
 
                 Row {
@@ -90,22 +102,21 @@ Page {
                               right: parent.right; rightMargin: units.gu(2) }
                     spacing: units.gu(2)
 
+                    // Cover
                     Rectangle {
                         width: units.gu(14); height: units.gu(20)
-                        color: root.isDarkMode ? "#1A2E1A" : "#C8E6C9"
+                        color: root.isDarkMode ? "#2A1508" : "#E8D5B0"
                         radius: units.dp(6)
                         anchors.verticalCenter: parent.verticalCenter
                         clip: true
 
-                        // Watermark
                         Icon {
                             anchors.centerIn: parent
                             width: units.gu(8); height: units.gu(8)
                             name: "stock_ebook"
-                            color: root.isDarkMode ? "#2C5F2E" : "#4CAF50"
+                            color: root.isDarkMode ? "#8B5A32" : "#A0784A"
                             opacity: 0.25
                         }
-
                         Image {
                             id: coverImg
                             anchors.fill: parent; anchors.margins: units.dp(2)
@@ -121,10 +132,11 @@ Page {
                                     return libBookPage.book.cover
                                 return ""
                             }
-                            onStatusChanged: console.log("Cover status:", status, "src:", source)
+                            onStatusChanged: console.log("Cover:", status, source)
                         }
                     }
 
+                    // Metadata
                     Column {
                         width: parent.width - units.gu(16)
                         anchors.verticalCenter: parent.verticalCenter
@@ -136,15 +148,15 @@ Page {
                             fontSize: "large"; font.weight: Font.Medium
                             color: root.isDarkMode ? "#FFFFFF" : "#212121"
                             wrapMode: Text.WordWrap
-                            Behavior on color { ColorAnimation { duration: 250 } }
                         }
+                        // Author in earthen brown
                         Label {
                             width: parent.width
                             text: libBookPage.book
                                   ? (libBookPage.book.author_display
                                      || libBookPage.book.author || "") : ""
                             fontSize: "small"
-                            color: libBookPage.earthBrown
+                            color: root.isDarkMode ? "#AAAAAA" : "#666666"
                             wrapMode: Text.WordWrap
                         }
                         Label {
@@ -159,32 +171,36 @@ Page {
                         }
                         Item { width: 1; height: units.gu(0.2) }
 
-                        // Downloaded + progress badges
+                        // Badges row
                         Row {
                             spacing: units.gu(0.6)
+                            // Downloaded — earthen brown with native check icon
                             Rectangle {
                                 height: units.gu(2.4)
-                                width: dlRow.width + units.gu(1.6)
+                                width: dlBadgeRow.width + units.gu(1.6)
                                 radius: height / 2
                                 color: libBookPage.earthBrown
                                 Row {
-                                    id: dlRow
+                                    id: dlBadgeRow
                                     anchors.centerIn: parent
                                     spacing: units.gu(0.3)
                                     Icon {
-                                        width: units.gu(1.6); height: units.gu(1.6)
-                                        name: "select"
+                                        width: units.gu(1.5); height: units.gu(1.5)
+                                        name: "tick"
                                         color: "#FFFFFF"
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                     Label {
-                                        text: "Downloaded"; fontSize: "x-small"; color: "#FFFFFF"
+                                        text: "Downloaded"
+                                        fontSize: "x-small"; color: "#FFFFFF"
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }
                             }
+                            // Progress badge
                             Rectangle {
-                                visible: libBookPage.book ? libBookPage.book.read_percent > 0 : false
+                                visible: libBookPage.book
+                                         ? libBookPage.book.read_percent > 0 : false
                                 height: units.gu(2.4); width: pctLbl.width + units.gu(1.2)
                                 radius: height / 2
                                 color: root.isDarkMode ? "#252525" : "#DDDDDD"
@@ -197,6 +213,7 @@ Page {
                             }
                         }
 
+                        // Language + category tags
                         Row {
                             spacing: units.gu(0.6)
                             Rectangle {
@@ -205,8 +222,7 @@ Page {
                                 color: root.isDarkMode ? "#252525" : "#DDDDDD"
                                 Label { id: langLbl; anchors.centerIn: parent
                                         text: libBookPage.book
-                                              ? (libBookPage.book.language
-                                                 ? libBookPage.book.language.toUpperCase() : "EN") : "EN"
+                                              ? (libBookPage.book.language || "EN").toUpperCase() : "EN"
                                         fontSize: "x-small"
                                         color: root.isDarkMode ? "#AAAAAA" : "#666666" }
                             }
@@ -227,16 +243,19 @@ Page {
 
             // ── Public Domain banner ──────────────────────────────────────────
             Rectangle {
-                width: parent.width; height: units.gu(4); color: "#0A1A0A"
+                width: parent.width; height: units.gu(4)
+                color: root.isDarkMode ? "#0A1A0A" : "#4CAF50"
                 Row {
                     anchors { left: parent.left; leftMargin: units.gu(2)
                               verticalCenter: parent.verticalCenter }
                     spacing: units.gu(0.8)
                     Icon { width: units.gu(2); height: units.gu(2)
-                           name: "security-high"; color: "#4CAF50"
+                           name: "stock_ebook"
+                           color: root.isDarkMode ? "#4CAF50" : "#FFFFFF"
                            anchors.verticalCenter: parent.verticalCenter }
                     Label { text: "Public Domain — free to read, share, and remix"
-                            fontSize: "x-small"; color: "#4CAF50"
+                            fontSize: "x-small"
+                            color: root.isDarkMode ? "#4CAF50" : "#FFFFFF"
                             anchors.verticalCenter: parent.verticalCenter }
                 }
             }
@@ -244,7 +263,7 @@ Page {
             Rectangle { width: parent.width; height: units.dp(1)
                         color: root.isDarkMode ? "#2A2A2A" : "#E0E0E0" }
 
-            // ── Reading progress ──────────────────────────────────────────────
+            // ── Reading progress bar ──────────────────────────────────────────
             Item {
                 visible: libBookPage.book ? libBookPage.book.read_percent > 0 : false
                 width: parent.width; height: units.gu(5)
@@ -263,7 +282,8 @@ Page {
                     height: units.dp(3); radius: height / 2
                     color: root.isDarkMode ? "#2A2A2A" : "#E0E0E0"
                     Rectangle {
-                        width: parent.width * ((libBookPage.book ? libBookPage.book.read_percent : 0) / 100)
+                        width: parent.width * ((libBookPage.book
+                               ? libBookPage.book.read_percent : 0) / 100)
                         height: parent.height; radius: parent.radius; color: "#4CAF50"
                         Behavior on width { NumberAnimation { duration: 400 } }
                     }
@@ -295,56 +315,89 @@ Page {
                 width: parent.width; spacing: units.gu(1.2)
                 Item { width: parent.width; height: units.gu(1) }
 
-                // Read — standard solid green button
+                // Start Reading — solid green
                 Rectangle {
                     anchors { left: parent.left; right: parent.right
                               leftMargin: units.gu(2); rightMargin: units.gu(2) }
                     height: units.gu(5.5); radius: units.dp(8)
-                    color: "#2C5F2E"
-
+                    color: root.isDarkMode ? "#0D0D0D" : "#2C5F2E"
                     Row {
                         anchors.centerIn: parent; spacing: units.gu(0.8)
                         Icon {
                             width: units.gu(2.2); height: units.gu(2.2)
-                            name: "media-playback-start"; color: "#FFFFFF"
+                            name: "media-playback-start"
+                            color: root.isDarkMode ? "#0D0D0D" : "#FFFFFF"
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         Label {
                             text: libBookPage.book
                                   ? (libBookPage.book.read_percent > 0
                                      ? "Continue Reading" : "Start Reading") : "Read"
-                            fontSize: "medium"; font.weight: Font.Medium; color: "#FFFFFF"
+                            fontSize: "medium"; font.weight: Font.Medium
+                            color: root.isDarkMode ? "#0D0D0D" : "#FFFFFF"
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
-                            console.log("READ — epub_url:", libBookPage.book ? libBookPage.book.epub_url : "")
-                            console.log("READ — file_path:", libBookPage.book ? libBookPage.book.file_path : "")
-                            // TODO: pageStack.push(readerPage)
+                            console.log("StartReading tapped, book:", libBookPage.book ? libBookPage.book.id : "null")
+                            if (root && root.openReader) {
+                                root.openReader(libBookPage.book)
+                            } else {
+                                console.log("ERROR: root.openReader not found, root=", root)
+                            }
                         }
                     }
                 }
 
-                // Remove from Library — ghost button in earthen brown
+                // + Add to Reading List — ghost green
                 Rectangle {
                     anchors { left: parent.left; right: parent.right
                               leftMargin: units.gu(2); rightMargin: units.gu(2) }
                     height: units.gu(5.5); radius: units.dp(8)
                     color: "transparent"
-                    border.width: units.dp(1.5)
-                    border.color: root.isDarkMode
-                                  ? libBookPage.earthBrownLight
-                                  : libBookPage.earthBrown
+                    border.color: "#2C5F2E"
+                    border.width: units.dp(1)
+                    Row {
+                        anchors.centerIn: parent; spacing: units.gu(0.8)
+                        Icon {
+                            width: units.gu(2); height: units.gu(2)
+                            name: "add"; color: "#4CAF50"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Label {
+                            text: "Add to Reading List"
+                            fontSize: "small"; color: "#4CAF50"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: readingListDialog.visible = true
+                    }
+                }
 
-                    Label {
-                        anchors.centerIn: parent
-                        text: "Remove from Library"
-                        fontSize: "small"
-                        color: root.isDarkMode
-                               ? libBookPage.earthBrownLight
-                               : libBookPage.earthBrown
+                // ✕ Remove from Library — ghost earthen brown
+                Rectangle {
+                    anchors { left: parent.left; right: parent.right
+                              leftMargin: units.gu(2); rightMargin: units.gu(2) }
+                    height: units.gu(5.5); radius: units.dp(8)
+                    color: "transparent"
+                    border.color: libBookPage.earthBrown
+                    border.width: units.dp(1)
+                    Row {
+                        anchors.centerIn: parent; spacing: units.gu(0.8)
+                        Icon {
+                            width: units.gu(2); height: units.gu(2)
+                            name: "close"; color: libBookPage.earthBrown
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Label {
+                            text: "Remove from Library"
+                            fontSize: "small"; color: libBookPage.earthBrown
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                     }
                     MouseArea {
                         anchors.fill: parent
@@ -360,39 +413,34 @@ Page {
                 width: parent.width
                 height: dbgCol.height + units.gu(2)
                 color: root.isDarkMode ? "#0A0A0A" : "#F0F0F0"
-
                 Column {
                     id: dbgCol
                     width: parent.width - units.gu(4)
                     anchors { horizontalCenter: parent.horizontalCenter
                               top: parent.top; topMargin: units.gu(1) }
                     spacing: units.gu(0.4)
-
                     Label { width: parent.width; text: "— debug info —"
-                            fontSize: "x-small"; color: "#555555"
+                            fontSize: "x-small"; color: "#777777"
                             horizontalAlignment: Text.AlignHCenter }
                     Label { width: parent.width
                             text: "cover source: " + libBookPage.dbgCoverSource
-                            fontSize: "x-small"
-                            color: libBookPage.dbgCoverSource.indexOf("local") === 0
-                                   ? "#4CAF50" : "#888888"
+                            fontSize: "x-small"; color: "#777777"
                             wrapMode: Text.WrapAnywhere }
                     Label { width: parent.width
                             text: "cover_url: " + libBookPage.dbgCoverUrl
-                            fontSize: "x-small"; color: "#666666"; wrapMode: Text.WrapAnywhere }
+                            fontSize: "x-small"; color: "#777777"; wrapMode: Text.WrapAnywhere }
                     Label { width: parent.width
                             text: "epub_url: " + libBookPage.dbgEpubUrl
-                            fontSize: "x-small"
-                            color: libBookPage.dbgEpubUrl !== "(none)" ? "#4CAF50" : "#AA4444"
+                            fontSize: "x-small"; color: "#777777"
                             wrapMode: Text.WrapAnywhere }
                     Label { width: parent.width
                             text: "file_path: " + libBookPage.dbgFilePath
-                            fontSize: "x-small"; color: "#666666"; wrapMode: Text.WrapAnywhere }
+                            fontSize: "x-small"; color: "#777777"
+                            wrapMode: Text.WrapAnywhere }
                     Label { width: parent.width
                             text: "img: " + ["Null","Ready","Loading","Error"][coverImg.status]
                                   + " (status " + coverImg.status + ")"
-                            fontSize: "x-small"
-                            color: coverImg.status === Image.Ready ? "#4CAF50" : "#AA4444" }
+                            fontSize: "x-small"; color: "#777777" }
                 }
             }
 
@@ -430,90 +478,116 @@ Page {
         }
     }
 
-    // ── Confirm remove dialog ─────────────────────────────────────────────────
-    Rectangle {
-        id: removeDialog
-        visible: false
-        anchors.fill: parent
-        color: "#AA000000"
-        z: 20
+    // ── Shared modal overlay component ───────────────────────────────────────
+    // Simple Rectangle overlay — no Dialog type needed, works on all Qt 5.12 builds
 
+    // "Add to Reading List" — coming soon
+    Rectangle {
+        id: readingListDialog
+        visible: false; z: 50
+        anchors.fill: parent
+        color: "#CC000000"
+        MouseArea { anchors.fill: parent }
         Rectangle {
             anchors.centerIn: parent
             width: parent.width - units.gu(8)
-            height: dialogCol.height + units.gu(4)
             radius: units.dp(12)
             color: root.isDarkMode ? "#1E1E1E" : "#FFFFFF"
-
+            height: rlCol.height + units.gu(4)
             Column {
-                id: dialogCol
+                id: rlCol
                 anchors { top: parent.top; topMargin: units.gu(2.5)
                           left: parent.left; right: parent.right
-                          leftMargin: units.gu(2); rightMargin: units.gu(2) }
+                          leftMargin: units.gu(2.5); rightMargin: units.gu(2.5) }
                 spacing: units.gu(1.5)
-
                 Label {
-                    width: parent.width
-                    text: "Remove from Library?"
+                    width: parent.width; text: "Reading lists coming soon"
                     fontSize: "large"; font.weight: Font.Medium
                     color: root.isDarkMode ? "#FFFFFF" : "#212121"
                     horizontalAlignment: Text.AlignHCenter
                 }
                 Label {
-                    width: parent.width
-                    text: libBookPage.book ? ("\"" + libBookPage.book.title + "\"") : ""
-                    fontSize: "small"; color: "#888888"
+                    width: parent.width; wrapMode: Text.WordWrap; lineHeight: 1.5
+                    text: "Reading lists let you organise books into curated collections "
+                        + "like Want to Read, Ecology, or Gifts for Friends. "
+                        + "Coming soon!"
+                    fontSize: "small"
+                    color: root.isDarkMode ? "#CCCCCC" : "#555555"
                     horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.WordWrap
+                }
+                Rectangle {
+                    width: parent.width; height: units.gu(5.5); radius: units.dp(8)
+                    color: "#2C5F2E"
+                    Label { anchors.centerIn: parent; text: "Got it"
+                            fontSize: "medium"; font.weight: Font.Medium; color: "#FFFFFF" }
+                    MouseArea { anchors.fill: parent
+                                onClicked: readingListDialog.visible = false }
+                }
+                Item { width: 1; height: units.gu(0.5) }
+            }
+        }
+    }
+
+    // Confirm remove
+    Rectangle {
+        id: removeDialog
+        visible: false; z: 50
+        anchors.fill: parent
+        color: "#CC000000"
+        MouseArea { anchors.fill: parent }
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width - units.gu(8)
+            radius: units.dp(12)
+            color: root.isDarkMode ? "#1E1E1E" : "#FFFFFF"
+            height: rmCol.height + units.gu(4)
+            Column {
+                id: rmCol
+                anchors { top: parent.top; topMargin: units.gu(2.5)
+                          left: parent.left; right: parent.right
+                          leftMargin: units.gu(2.5); rightMargin: units.gu(2.5) }
+                spacing: units.gu(1.5)
+                Label {
+                    width: parent.width; text: "Remove from Library?"
+                    fontSize: "large"; font.weight: Font.Medium
+                    color: root.isDarkMode ? "#FFFFFF" : "#212121"
+                    horizontalAlignment: Text.AlignHCenter
                 }
                 Label {
-                    width: parent.width
-                    text: "Your reading progress will be lost."
-                    fontSize: "x-small"; color: "#666666"
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: libBookPage.book
+                          ? ("Remove " + libBookPage.book.title
+                             + "? Your reading progress will be lost.") : ""
+                    fontSize: "small"
+                    color: root.isDarkMode ? "#CCCCCC" : "#555555"
                     horizontalAlignment: Text.AlignHCenter
                 }
-
-                // Confirm — filled earthen brown
+                // Confirm — solid earthen brown
                 Rectangle {
-                    width: parent.width; height: units.gu(5.5)
-                    radius: units.dp(8); color: libBookPage.earthBrown
-                    Label {
-                        anchors.centerIn: parent
-                        text: "Remove"
-                        fontSize: "medium"; font.weight: Font.Medium; color: "#FFFFFF"
-                    }
+                    width: parent.width; height: units.gu(5.5); radius: units.dp(8)
+                    color: libBookPage.earthBrown
+                    Label { anchors.centerIn: parent; text: "Remove"
+                            fontSize: "medium"; font.weight: Font.Medium; color: "#FFFFFF" }
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
-                            if (libBookPage.book) {
-                                Library.removeBook(libBookPage.book.id)
-                                console.log("Removed:", libBookPage.book.id)
-                            }
+                            if (libBookPage.book) Library.removeBook(libBookPage.book.id)
                             removeDialog.visible = false
                             pageStack.pop()
                         }
                     }
                 }
-
                 // Cancel — ghost earthen brown
                 Rectangle {
-                    width: parent.width; height: units.gu(5.5)
-                    radius: units.dp(8); color: "transparent"
+                    width: parent.width; height: units.gu(5.5); radius: units.dp(8)
+                    color: "transparent"
                     border.color: libBookPage.earthBrown; border.width: units.dp(1.5)
-                    Label {
-                        anchors.centerIn: parent
-                        text: "Keep in Library"
-                        fontSize: "small"
-                        color: root.isDarkMode
-                               ? libBookPage.earthBrownLight : libBookPage.earthBrown
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: removeDialog.visible = false
-                    }
+                    Label { anchors.centerIn: parent; text: "Keep in Library"
+                            fontSize: "small"; color: libBookPage.earthBrown }
+                    MouseArea { anchors.fill: parent
+                                onClicked: removeDialog.visible = false }
                 }
-
-                Item { width: parent.width; height: units.gu(0.5) }
+                Item { width: 1; height: units.gu(0.5) }
             }
         }
     }
@@ -523,10 +597,16 @@ Page {
     function fetchDescription(book) {
         descLoading = true
         descStatus  = "Loading description…"
-        // Wikipedia summary API — fast single request, reliable extract field
-        var title = (book.title || "").split(";")[0].split(":")[0].trim()
-                                       .replace(/[^a-zA-Z0-9 ]/g, " ").trim()
-                                       .replace(/ +/g, "_")
+        // Clean title safely without regex char classes that confuse Qt 5.12 parser
+        var rawTitle = (book.title || "").split(";")[0].split(":")[0].trim()
+        var titleChars = []
+        for (var ci = 0; ci < rawTitle.length; ci++) {
+            var ch = rawTitle.charCodeAt(ci)
+            var isAlNum = (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122)
+                          || (ch >= 48 && ch <= 57) || ch === 32
+            titleChars.push(isAlNum ? rawTitle[ci] : " ")
+        }
+        var title = titleChars.join("").trim().replace(/ +/g, "_")
         var xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function() {
             if (xhr.readyState !== XMLHttpRequest.DONE) return
@@ -535,12 +615,10 @@ Page {
                 try {
                     var data = JSON.parse(xhr.responseText)
                     if (data.extract && data.extract.length > 20) {
-                        descStatus = _truncate(data.extract, 80)
-                        return
+                        descStatus = _truncate(data.extract, 80); return
                     }
                 } catch(e) { console.log("Wiki parse error:", e) }
             }
-            // Fallback: subjects
             descStatus = (book.subjects && book.subjects.length > 0)
                          ? "Subjects: " + book.subjects.slice(0, 4).join(", ") + "."
                          : "No description available."
@@ -551,7 +629,15 @@ Page {
     }
 
     function _truncate(text, maxWords) {
-        var clean = text.replace(/<[^>]+>/g, " ").replace(/\n+/g, " ").trim()
+        // Strip HTML tags without using > inside regex char class (Qt 5.12 parser bug)
+        var clean = text
+        while (clean.indexOf("<") !== -1) {
+            var open = clean.indexOf("<")
+            var close = clean.indexOf(">", open)
+            if (close === -1) break
+            clean = clean.substring(0, open) + " " + clean.substring(close + 1)
+        }
+        clean = clean.replace(/\n+/g, " ").trim()
         var words = clean.split(/\s+/).filter(function(w) { return w.length > 0 })
         return words.length <= maxWords ? clean : words.slice(0, maxWords).join(" ") + "…"
     }

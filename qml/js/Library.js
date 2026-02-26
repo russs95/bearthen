@@ -1,12 +1,16 @@
 .pragma library
-    .import QtQuick.LocalStorage 2.0 as LS
+.import QtQuick.LocalStorage 2.0 as LS
 
-// ── Public path constants (for cover/epub file writes via XHR PUT) ────────────
-// Note: file writes via XHR PUT DO work for the app's data dir on Ubuntu Touch.
-// LocalStorage handles the JSON database; XHR PUT handles binary files.
-var DATA_DIR   = "/home/phablet/.local/share/bearthen.russs95"
-var BOOKS_DIR  = DATA_DIR + "/books"
-var COVERS_DIR = DATA_DIR + "/covers"
+// ── Storage paths ─────────────────────────────────────────────────────────────
+// Qt creates ~/.local/share/bearthen.russs95/ automatically for LocalStorage.
+// We store files FLAT in that directory — no subdirs, so no mkdir ever needed.
+// Filenames are prefixed: cover_<id>.jpg  book_<id>.epub
+var APP_DATA_DIR = "/home/phablet/.local/share/bearthen.russs95"
+var BOOKS_DIR    = APP_DATA_DIR   // flat — no subdir
+var COVERS_DIR   = APP_DATA_DIR   // flat — no subdir
+
+function coverPath(bookId) { return APP_DATA_DIR + "/cover_" + bookId + ".jpg" }
+function bookPath(bookId)  { return APP_DATA_DIR + "/book_"  + bookId + ".epub" }
 
 // ── Database bootstrap ────────────────────────────────────────────────────────
 function _db() {
@@ -80,9 +84,19 @@ function init() {
                 PRIMARY KEY (list_id, book_id)\
             )')
 
-        // Ensure binary dirs exist via marker files
-        _touchFile(BOOKS_DIR  + "/.keep")
-        _touchFile(COVERS_DIR + "/.keep")
+        // Migrate: clear stale local paths from previous failed write attempts.
+        // Any path containing "/covers/" or "/books/" subdir is from an old
+        // broken build — wipe them so UI falls back to cover_url gracefully.
+        try {
+            tx.executeSql(
+                "UPDATE books_tb SET cover_local = '' WHERE cover_local LIKE '%/covers/%'")
+            tx.executeSql(
+                "UPDATE books_tb SET cover_local = '' WHERE cover_local LIKE '%/QML/OfflineStorage/%'")
+            tx.executeSql(
+                "UPDATE books_tb SET file_path = '' WHERE file_path LIKE '%/books/%'")
+            tx.executeSql(
+                "UPDATE books_tb SET file_path = '' WHERE file_path LIKE '%/QML/OfflineStorage/%'")
+        } catch(e) {}
     })
     console.log("Library: database ready")
 }
@@ -95,13 +109,6 @@ function _touchFile(path) {
         xhr.open("PUT", "file://" + path, false)
         xhr.send("")
     } catch(e) {}
-}
-
-function writeBinary(path, data) {
-    var xhr = new XMLHttpRequest()
-    xhr.open("PUT", "file://" + path, false)
-    xhr.send(data)
-    return xhr.status === 0 || xhr.status === 200 || xhr.status === 201
 }
 
 // ── Books ─────────────────────────────────────────────────────────────────────
@@ -213,6 +220,11 @@ function updatePosition(id, cfi, percent) {
             WHERE id = ?',
             [cfi, percent, now, id])
     })
+}
+
+function updateReadPercent(id, percent) {
+    updatePosition(id, "", percent)
+    console.log("Library.updateReadPercent:", id, "->", percent + "%")
 }
 
 function markFinished(id) {
@@ -327,7 +339,7 @@ function getLists() {
         for (var i = 0; i < rs.rows.length; i++) {
             var row  = rs.rows.item(i)
             var list = { id: row.id, name: row.name, description: row.description,
-                created_at: row.created_at, updated_at: row.updated_at, book_ids: [] }
+                         created_at: row.created_at, updated_at: row.updated_at, book_ids: [] }
             var rs2  = tx.executeSql(
                 'SELECT book_id FROM reading_list_entries_tb WHERE list_id = ? ORDER BY position',
                 [row.id])

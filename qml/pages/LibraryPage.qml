@@ -7,10 +7,32 @@ Page {
 
     header: PageHeader {
         id: pageHeader
-        title: "Bearthen"
-        subtitle: root.t("Your Library")
+        contents: Item {
+            anchors { fill: parent; leftMargin: units.gu(1) }
+            Column {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: units.dp(2)
+                Label {
+                    text: "Bearthen"
+                    fontSize: "large"
+                    font.weight: Font.Light
+                    color: "#4CAF50"
+                    elide: Text.ElideRight
+                    width: parent.width
+                }
+                Label {
+                    text: root.t("Library")
+                    fontSize: "small"
+                    font.weight: Font.Light
+                    color: "#6B3A20"
+                    elide: Text.ElideRight
+                    width: parent.width
+                }
+            }
+        }
         StyleHints {
-            foregroundColor: "#4CAF50"
             backgroundColor: root.isDarkMode ? "#1A1A1A" : "#F5F5F5"
             dividerColor: "#2C5F2E"
         }

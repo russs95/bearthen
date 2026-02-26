@@ -5,6 +5,7 @@
         "audio",
         "video",
         "content_exchange",
-        "content_exchange_source"
+        "content_exchange_source",
+        "webview"
     ]
 }

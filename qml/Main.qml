@@ -46,6 +46,44 @@ MainView {
     AccountPage           { id: accountPage       }
     SettingsPage          { id: settingsPage      }
 
+    // ReaderPage lazy-loads via Loader — Morph.Web segfaults if the WebView
+    // exists at startup. We activate on first use and respond via onLoaded.
+    property var _pendingReaderBook: null
+
+    Loader {
+        id: readerLoader
+        active: false
+        source: "pages/ReaderPage.qml"
+        onStatusChanged: {
+            console.log("readerLoader status:", status,
+                        status === Loader.Error ? "ERROR — check ReaderPage.qml" :
+                        status === Loader.Ready ? "Ready" :
+                        status === Loader.Loading ? "Loading" : "Null")
+        }
+        onLoaded: {
+            // Item is fully created — safe to call methods and push
+            if (root._pendingReaderBook) {
+                item.openBook(root._pendingReaderBook)
+                root._pendingReaderBook = null
+            }
+            pageStack.push(item)
+        }
+    }
+
+    // Called by LibraryBookDetailPage — activates loader or pushes immediately
+    function openReader(book) {
+        console.log("openReader called, book:", book ? book.id : "null",
+                    "loader status:", readerLoader.status)
+        if (readerLoader.status === Loader.Ready) {
+            readerLoader.item.openBook(book)
+            pageStack.push(readerLoader.item)
+        } else {
+            root._pendingReaderBook = book
+            readerLoader.active = true
+            console.log("openReader: activating loader, pending book:", book.id)
+        }
+    }
+
     // ── Page stack ────────────────────────────────────────────────────────────
     PageStack {
         id: pageStack
@@ -87,7 +125,7 @@ MainView {
                     Rectangle {
                         anchors { top: parent.top; horizontalCenter: parent.horizontalCenter }
                         width: units.gu(4); height: units.dp(2)
-                        radius: units.dp(1); color: "#2C5F2E"
+                        radius: units.dp(1); color: "#6B3A20"
                         visible: root.currentPage === index
                     }
 
@@ -136,90 +174,74 @@ MainView {
         z: 100
         visible: opacity > 0
 
-        // Radial green glow behind the icon
+        // Large radial glow — three concentric circles, bigger than before
         Rectangle {
             anchors.centerIn: parent
-            width: units.gu(28); height: units.gu(28)
-            radius: width / 2
-            color: "transparent"
-
-            // Inner glow layers
-            Rectangle {
-                anchors.centerIn: parent
-                width: units.gu(24); height: units.gu(24)
-                radius: width / 2
-                color: "#0D2A0D"
-            }
-            Rectangle {
-                anchors.centerIn: parent
-                width: units.gu(18); height: units.gu(18)
-                radius: width / 2
-                color: "#112E11"
-            }
+            width: units.gu(44); height: units.gu(44)
+            radius: width / 2; color: "#0C1F0C"
+        }
+        Rectangle {
+            anchors.centerIn: parent
+            width: units.gu(36); height: units.gu(36)
+            radius: width / 2; color: "#0F280F"
+        }
+        Rectangle {
+            anchors.centerIn: parent
+            width: units.gu(26); height: units.gu(26)
+            radius: width / 2; color: "#132E13"
         }
 
+        // Title + tagline centred on screen
         Column {
             anchors.centerIn: parent
-            spacing: units.gu(2)
+            spacing: units.gu(1.2)
 
-            // Bear/earth icon — using the app's ebook icon as stand-in
-            // Replace with actual Bearthen SVG logo when available
-            Icon {
+            Label {
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: units.gu(14); height: units.gu(14)
-                name: "stock_ebook"
-                color: "#4CAF50"
-
-                // Gentle pulse on load
-                SequentialAnimation on scale {
-                    running: splash.visible
-                    NumberAnimation { to: 1.06; duration: 900; easing.type: Easing.InOutSine }
-                    NumberAnimation { to: 1.00; duration: 900; easing.type: Easing.InOutSine }
-                }
+                text: "Bearthen"
+                font.pixelSize: units.dp(54)
+                font.weight: Font.Light
+                color: "#FFFFFF"
+                font.letterSpacing: units.dp(4)
             }
 
-            Column {
+            Label {
                 anchors.horizontalCenter: parent.horizontalCenter
-                spacing: units.gu(0.5)
-
-                Label {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Bearthen"
-                    fontSize: "x-large"
-                    font.weight: Font.Light
-                    color: "#FFFFFF"
-                    font.letterSpacing: units.dp(3)
-                }
-
-                Label {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "read freely"
-                    fontSize: "small"
-                    font.weight: Font.Light
-                    color: "#4CAF50"
-                    font.letterSpacing: units.dp(2)
-                }
+                text: "read freely"
+                fontSize: "medium"
+                font.weight: Font.Light
+                color: "#4CAF50"
+                font.letterSpacing: units.dp(3)
             }
         }
 
-        // Earthen attribution at bottom
-        Label {
+        // "by Earthen Labs" pill — earthen brown, pinned near the bottom
+        Rectangle {
             anchors {
                 horizontalCenter: parent.horizontalCenter
                 bottom: parent.bottom
-                bottomMargin: units.gu(4)
+                bottomMargin: units.gu(5)
             }
-            text: "an earthen project"
-            fontSize: "x-small"
-            color: "#2C5F2E"
-            font.letterSpacing: units.dp(1)
+            height: units.gu(3.2)
+            width: byLabel.width + units.gu(2.4)
+            radius: height / 2
+            color: "#8B5E3C"
+
+            Label {
+                id: byLabel
+                anchors.centerIn: parent
+                text: "by Earthen Labs"
+                fontSize: "x-small"
+                font.weight: Font.Medium
+                color: "#FFFFFF"
+                font.letterSpacing: units.dp(1)
+            }
         }
 
-        // Fade out after 1.8s, then become invisible
+        // Fade out after 1.8s
         SequentialAnimation {
             id: splashAnim
             running: false
-
             PauseAnimation  { duration: 1800 }
             NumberAnimation {
                 target: splash; property: "opacity"

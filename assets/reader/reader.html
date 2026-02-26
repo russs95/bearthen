@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Bearthen Reader</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #111111;
+            color: #E8E0D0;
+            font-family: Georgia, serif;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* ── Loading screen ───────────────────────────────────────── */
+        #loading {
+            position: fixed; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: #111111; z-index: 100; gap: 24px;
+        }
+        #loading .spinner {
+            width: 36px; height: 36px;
+            border: 2px solid #2A1508;
+            border-top-color: #8B5A32;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+        #loading .load-title {
+            color: #8B5A32; font-size: 22px; font-weight: 300;
+            font-family: Georgia, serif; letter-spacing: 3px;
+        }
+        #loading .load-sub {
+            color: #444; font-size: 13px; font-family: sans-serif;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Error screen ─────────────────────────────────────────── */
+        #error {
+            position: fixed; inset: 0;
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: #111111; z-index: 100; gap: 16px; padding: 40px;
+        }
+        #error .err-icon { font-size: 48px; }
+        #error .err-title { color: #CC4444; font-size: 18px; font-family: sans-serif; }
+        #error .err-msg {
+            color: #666; font-size: 13px; font-family: sans-serif;
+            text-align: center; line-height: 1.7;
+        }
+
+        /* ── Reader ───────────────────────────────────────────────── */
+        #reader {
+            position: fixed; inset: 0;
+            opacity: 0; transition: opacity 0.5s ease;
+        }
+        #reader.ready { opacity: 1; }
+
+        #viewer {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            bottom: 68px;
+        }
+
+        /* ── Swipe/tap overlay — full screen, transparent ────────── */
+        #touch-layer {
+            position: absolute; inset: 0;
+            z-index: 10;
+        }
+
+        /* ── Bottom bar ───────────────────────────────────────────── */
+        #bottom-bar {
+            position: absolute; bottom: 0; left: 0; right: 0; height: 68px;
+            background: rgba(10,10,10,0.96);
+            border-top: 1px solid #1E1E1E;
+            display: flex; align-items: center;
+            padding: 0 20px; gap: 14px;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        #bottom-bar.hidden {
+            transform: translateY(68px);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .font-btn {
+            color: #555; cursor: pointer;
+            font-family: Georgia, serif;
+            padding: 8px 10px; border-radius: 6px;
+            transition: color 0.15s, background 0.15s;
+            flex-shrink: 0;
+        }
+        #font-down { font-size: 14px; }
+        #font-up   { font-size: 18px; }
+        .font-btn:active { color: #8B5A32; background: #1E1E1E; }
+
+        #progress-track {
+            flex: 1; height: 4px; background: #2A2A2A; border-radius: 2px;
+            cursor: pointer; position: relative; touch-action: none;
+        }
+        #progress-fill {
+            height: 100%; background: #8B5A32; border-radius: 2px;
+            width: 0%; transition: width 0.4s ease;
+            pointer-events: none;
+        }
+        /* Fat touch target over the slim track */
+        #progress-track::before {
+            content: ''; position: absolute;
+            top: -12px; bottom: -12px; left: 0; right: 0;
+        }
+        #pct-label {
+            color: #8B5A32; min-width: 36px; text-align: right;
+            font-family: sans-serif; font-size: 12px; flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading">
+    <div class="spinner"></div>
+    <div class="load-title">bearthen</div>
+    <div class="load-sub" id="load-msg">Opening book…</div>
+</div>
+
+<div id="error">
+    <div class="err-icon">📖</div>
+    <div class="err-title">Could not open book</div>
+    <div class="err-msg" id="err-msg">The EPUB file could not be loaded.</div>
+</div>
+
+<div id="reader">
+    <div id="viewer"></div>
+    <div id="touch-layer"></div>
+    <div id="bottom-bar">
+        <span id="font-down" class="font-btn">A−</span>
+        <div id="progress-track">
+            <div id="progress-fill"></div>
+        </div>
+        <span id="pct-label">0%</span>
+        <span id="font-up" class="font-btn">A+</span>
+    </div>
+</div>
+
+<script src="./jszip.min.js"></script>
+<script src="./epub.min.js"></script>
+
+<script>
+    (function() {
+        'use strict';
+
+        // ── URL params ───────────────────────────────────────────────────────────
+        function getParam(name) {
+            var idx = location.href.indexOf('?');
+            if (idx === -1) return '';
+            var pairs = location.href.substring(idx + 1).split('&');
+            for (var i = 0; i < pairs.length; i++) {
+                var eq = pairs[i].indexOf('=');
+                if (eq < 0) continue;
+                if (decodeURIComponent(pairs[i].substring(0, eq)) === name)
+                    return decodeURIComponent(pairs[i].substring(eq + 1));
+            }
+            return '';
+        }
+
+        var epubUrl   = getParam('url');
+        var startPct  = parseFloat(getParam('percent')) || 0;
+        var bookTitle = getParam('title') || 'Book';
+        var fontSize  = 105;  // slightly larger default — comfortable on phone
+
+        document.getElementById('load-msg').textContent = 'Opening ' + bookTitle + '…';
+        if (!epubUrl) { showError('No EPUB URL provided.'); return; }
+
+        // ── Book & rendition ─────────────────────────────────────────────────────
+        var book, rendition;
+        var currentPct  = startPct;
+        var barsVisible = true;
+        var autoHideTimer = null;
+
+        window.addEventListener('load', function() {
+            if (typeof ePub === 'undefined') {
+                showError('Could not load epub.js.\nBundle missing?');
+                return;
+            }
+            openBook();
+        });
+
+        function openBook() {
+            try { book = ePub(epubUrl); }
+            catch(e) { showError('Failed to open: ' + e.message); return; }
+
+            rendition = book.renderTo('viewer', {
+                method:   'paginated',
+                width:    '100%',
+                height:   '100%',
+                spread:   'none',           // single column — better on phone
+                allowScriptedContent: false
+            });
+
+            // ── Theme: inject into the epub iframe ─────────────────────────────────
+            // epub.js injects this CSS into every content document.
+            // Using !important on everything to beat EPUB's own stylesheet.
+            rendition.themes.register('bearthen', {
+                '*': {
+                    'box-sizing': 'border-box !important'
+                },
+                'html': {
+                    'background': '#111111 !important',
+                    'overflow-x': 'hidden !important'
+                },
+                'body': {
+                    'background':    '#111111 !important',
+                    'color':         '#DDD8CC !important',
+                    'font-family':   "Georgia, 'Times New Roman', serif !important",
+                    'font-size':     fontSize + '% !important',
+                    'line-height':   '1.75 !important',
+                    'max-width':     '100% !important',
+                    'margin':        '0 !important',
+                    'padding':       '8px 20px 8px 20px !important',
+                    '-webkit-font-smoothing': 'antialiased !important'
+                },
+                'p': {
+                    'margin':        '0 0 0.9em 0 !important',
+                    'text-align':    'justify !important',
+                    'text-indent':   '1.4em !important',
+                    'orphans':       '2 !important',
+                    'widows':        '2 !important'
+                },
+                'p:first-of-type, p.noindent': {
+                    'text-indent': '0 !important'
+                },
+                'h1, h2, h3, h4, h5, h6': {
+                    'color':         '#C8B89A !important',
+                    'font-weight':   '300 !important',
+                    'line-height':   '1.3 !important',
+                    'margin':        '1.2em 0 0.6em 0 !important',
+                    'text-indent':   '0 !important',
+                    'text-align':    'left !important'
+                },
+                'h1': { 'font-size': '1.5em !important' },
+                'h2': { 'font-size': '1.3em !important' },
+                'h3': { 'font-size': '1.1em !important' },
+                'a': {
+                    'color': '#8B5A32 !important',
+                    'text-decoration': 'none !important'
+                },
+                'a:hover': { 'text-decoration': 'underline !important' },
+                'em, i': { 'color': '#DDD8CC !important' },
+                'strong, b': {
+                    'color': '#EDE8E0 !important',
+                    'font-weight': '600 !important'
+                },
+                'blockquote': {
+                    'border-left':   '2px solid #3A2A1A !important',
+                    'margin':        '1em 0 1em 0 !important',
+                    'padding-left':  '1.2em !important',
+                    'color':         '#AAAAAA !important',
+                    'font-style':    'italic !important'
+                },
+                'img': {
+                    'max-width':  '100% !important',
+                    'height':     'auto !important',
+                    'display':    'block !important',
+                    'margin':     '1em auto !important'
+                },
+                'table': { 'color': '#DDD8CC !important' },
+                'hr': {
+                    'border': 'none !important',
+                    'border-top': '1px solid #2A2A2A !important',
+                    'margin': '1.5em 0 !important'
+                }
+            });
+            rendition.themes.select('bearthen');
+
+            // ── Display from saved position ────────────────────────────────────────
+            if (startPct > 1) {
+                book.ready
+                    .then(function() { return book.locations.generate(1024); })
+                    .then(function() {
+                        var cfi = book.locations.cfiFromPercentage(startPct / 100);
+                        return rendition.display(cfi);
+                    })
+                    .catch(function() { rendition.display(); });
+            } else {
+                rendition.display();
+            }
+
+            // ── Book ready ────────────────────────────────────────────────────────
+            book.ready.then(function() {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('reader').classList.add('ready');
+                book.locations.generate(1024);   // async, for progress %
+                scheduleAutoHide();
+            }).catch(function(e) {
+                showError('Book failed to load: ' + (e.message || e));
+            });
+
+            // ── Position updates ──────────────────────────────────────────────────
+            rendition.on('relocated', function(location) {
+                if (!location || !location.start) return;
+                var raw = book.locations.percentageFromCfi(location.start.cfi) || 0;
+                var pct = Math.round(raw * 100);
+                updateProgress(pct);
+                reportPosition(pct);
+            });
+
+            rendition.on('keydown', handleKey);
+        }
+
+        // ── Touch / swipe ─────────────────────────────────────────────────────────
+        var touchLayer = document.getElementById('touch-layer');
+        var touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+
+        touchLayer.addEventListener('touchstart', function(e) {
+            touchStartX    = e.touches[0].clientX;
+            touchStartY    = e.touches[0].clientY;
+            touchStartTime = Date.now();
+        }, { passive: true });
+
+        touchLayer.addEventListener('touchend', function(e) {
+            var dx   = e.changedTouches[0].clientX - touchStartX;
+            var dy   = e.changedTouches[0].clientY - touchStartY;
+            var dt   = Date.now() - touchStartTime;
+            var absDx = Math.abs(dx), absDy = Math.abs(dy);
+
+            // Swipe: fast, mostly horizontal, > 40px
+            if (dt < 400 && absDx > 40 && absDx > absDy * 1.5) {
+                if (dx < 0) { if (rendition) rendition.next(); }
+                else         { if (rendition) rendition.prev(); }
+                scheduleAutoHide();
+                return;
+            }
+
+            // Tap (short, small movement)
+            if (dt < 300 && absDx < 12 && absDy < 12) {
+                var w = window.innerWidth;
+                var x = e.changedTouches[0].clientX;
+                if (x < w * 0.25) {
+                    if (rendition) rendition.prev();
+                    scheduleAutoHide();
+                } else if (x > w * 0.65) {
+                    if (rendition) rendition.next();
+                    scheduleAutoHide();
+                } else {
+                    toggleBars();
+                }
+            }
+        }, { passive: true });
+
+        // Also let epub.js iframe keypresses work
+        function handleKey(e) {
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') rendition && rendition.next();
+            if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   rendition && rendition.prev();
+        }
+
+        // ── Controls visibility ───────────────────────────────────────────────────
+        function toggleBars() {
+            barsVisible = !barsVisible;
+            applyBarVisibility();
+            if (barsVisible) scheduleAutoHide();
+        }
+
+        function applyBarVisibility() {
+            var bar = document.getElementById('bottom-bar');
+            if (barsVisible) bar.classList.remove('hidden');
+            else             bar.classList.add('hidden');
+            // Tell QML about bar state (QML back button uses same toggle via title)
+            document.title = barsVisible ? 'BARS:1' : 'BARS:0';
+        }
+
+        function scheduleAutoHide() {
+            if (autoHideTimer) clearTimeout(autoHideTimer);
+            if (!barsVisible) return;
+            autoHideTimer = setTimeout(function() {
+                barsVisible = false;
+                applyBarVisibility();
+            }, 4000);  // auto-hide after 4s of inactivity
+        }
+
+        // ── Font size ─────────────────────────────────────────────────────────────
+        document.getElementById('font-down').addEventListener('click', function(e) {
+            e.stopPropagation();
+            fontSize = Math.max(75, fontSize - 10);
+            if (rendition) rendition.themes.override('font-size', fontSize + '%');
+            scheduleAutoHide();
+        });
+        document.getElementById('font-up').addEventListener('click', function(e) {
+            e.stopPropagation();
+            fontSize = Math.min(160, fontSize + 10);
+            if (rendition) rendition.themes.override('font-size', fontSize + '%');
+            scheduleAutoHide();
+        });
+
+        // ── Progress bar ──────────────────────────────────────────────────────────
+        function updateProgress(pct) {
+            currentPct = pct;
+            document.getElementById('progress-fill').style.width = pct + '%';
+            document.getElementById('pct-label').textContent = pct + '%';
+        }
+
+        var progressTrack = document.getElementById('progress-track');
+        progressTrack.addEventListener('click', function(e) {
+            if (!book || !book.locations || !rendition) return;
+            var rect = this.getBoundingClientRect();
+            var pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            var cfi  = book.locations.cfiFromPercentage(pct);
+            if (cfi) { rendition.display(cfi); scheduleAutoHide(); }
+        });
+
+        // ── Report position to QML ────────────────────────────────────────────────
+        // Uses document.title to pass data — QML watches webView.title.
+        // Safer than window.location.href which can navigate away before QML intercepts.
+        var reportTimer = null;
+        function reportPosition(pct) {
+            if (reportTimer) clearTimeout(reportTimer);
+            reportTimer = setTimeout(function() {
+                document.title = 'PCT:' + Math.round(pct);
+            }, 1500);
+        }
+
+        // ── Error ─────────────────────────────────────────────────────────────────
+        function showError(msg) {
+            document.getElementById('loading').style.display = 'none';
+            var el = document.getElementById('error');
+            el.style.display = 'flex';
+            document.getElementById('err-msg').textContent = msg;
+        }
+
+    })();
+</script>
+</body>
+</html>

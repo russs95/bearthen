@@ -13,20 +13,57 @@ Page {
     property bool   descLoading:      false
     property bool   alreadyInLib:     false
 
-    Component.onCompleted: {
-        Library.init()
-        if (book) {
-            alreadyInLib = Library.hasBook(book.id)
-            fetchDescription(book)
+    // Track the two-phase download (cover then epub)
+    property string _pendingBookId:   ""
+    property string _pendingEpubUrl:  ""   // stored at download start, safe to use in async callbacks
+    property bool   _coverDone:       false
+
+    Component.onCompleted: { Library.init() }
+
+    // Fires every time a new book is pushed to this page
+    onBookChanged: {
+        if (!book) return
+        alreadyInLib    = Library.hasBook(book.id)
+        bookDescription = ""
+        descLoading     = false
+        fetchDescription(book)
+    }
+
+    // ── Finish timer — brief pause so user sees 100% fill ───────────────────
+    Timer {
+        id: finishTimer
+        interval: 700; repeat: false
+        onTriggered: {
+            bookDetailPage.isDownloading = false
+            bookDetailPage.alreadyInLib  = true
         }
     }
 
     header: PageHeader {
         id: pageHeader
-        title:    bookDetailPage.book ? bookDetailPage.book.title : ""
-        subtitle: bookDetailPage.book ? bookDetailPage.book.author : ""
+        contents: Item {
+            anchors.fill: parent
+            Column {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                spacing: units.dp(1)
+                Label {
+                    text: bookDetailPage.book ? bookDetailPage.book.title : ""
+                    fontSize: "large"; font.weight: Font.Light; color: "#4CAF50"
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, parent.width)
+                }
+                Item { width: 1; height: units.dp(3) }
+                Label {
+                    text: bookDetailPage.book ? bookDetailPage.book.author : ""
+                    fontSize: "small"; font.weight: Font.Light; color: "#6B3A20"
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, parent.width)
+                    visible: text !== ""
+                }
+            }
+        }
         StyleHints {
-            foregroundColor: "#4CAF50"
             backgroundColor: root.isDarkMode ? "#1A1A1A" : "#F5F5F5"
             dividerColor: "#2C5F2E"
         }
@@ -163,6 +200,7 @@ Page {
                 }
             }
 
+            // ── Copyright banner ──────────────────────────────────────────────
             Rectangle {
                 width: parent.width; height: units.gu(4)
                 color: bookDetailPage.book
@@ -173,7 +211,7 @@ Page {
                               verticalCenter: parent.verticalCenter }
                     spacing: units.gu(0.8)
                     Icon { width: units.gu(2); height: units.gu(2)
-                           name: "security-high"; color: "#4CAF50"
+                           name: "lock"; color: "#4CAF50"
                            anchors.verticalCenter: parent.verticalCenter }
                     Label {
                         text: bookDetailPage.book
@@ -188,6 +226,7 @@ Page {
             Rectangle { width: parent.width; height: units.dp(1)
                         color: root.isDarkMode ? "#2A2A2A" : "#E0E0E0" }
 
+            // ── Description ───────────────────────────────────────────────────
             Item {
                 width: parent.width; height: descLbl.height + units.gu(3)
                 Label {
@@ -196,7 +235,7 @@ Page {
                     anchors { horizontalCenter: parent.horizontalCenter
                               top: parent.top; topMargin: units.gu(1.5) }
                     text: bookDetailPage.descLoading
-                          ? "Checking Open Library for description…"
+                          ? "Loading description…"
                           : (bookDetailPage.bookDescription !== ""
                              ? bookDetailPage.bookDescription
                              : "No description available for this title.")
@@ -208,20 +247,19 @@ Page {
                 }
             }
 
-            // ── Button section ────────────────────────────────────────────────
+            // ── Buttons + progress ────────────────────────────────────────────
             Column {
                 width: parent.width; spacing: units.gu(0.8)
                 Item { width: parent.width; height: units.gu(0.5) }
 
-                // Add to Library button
+                // Add to Library
                 Rectangle {
                     anchors { left: parent.left; right: parent.right
                               leftMargin: units.gu(2); rightMargin: units.gu(2) }
                     height: units.gu(5.5); radius: units.dp(8)
                     visible: !bookDetailPage.alreadyInLib && !bookDetailPage.isDownloading
                     color: bookDetailPage.book
-                           ? (bookDetailPage.book.hasEpub ? "#2C5F2E" : "#2A2A2A")
-                           : "#2A2A2A"
+                           ? (bookDetailPage.book.hasEpub ? "#2C5F2E" : "#2A2A2A") : "#2A2A2A"
                     Label {
                         anchors.centerIn: parent
                         text: bookDetailPage.book
@@ -235,45 +273,89 @@ Page {
                         anchors.fill: parent
                         enabled: bookDetailPage.book !== null &&
                                  (bookDetailPage.book ? bookDetailPage.book.hasEpub : false)
-                        onClicked: downloadBook(bookDetailPage.book)
+                        onClicked: startDownload(bookDetailPage.book)
                     }
                 }
 
+                // Downloading state — spinner + progress bar same dimensions as button
                 Rectangle {
+                    id: downloadingBlock
                     anchors { left: parent.left; right: parent.right
                               leftMargin: units.gu(2); rightMargin: units.gu(2) }
-                    height: units.gu(5.5); radius: units.dp(8); color: "#1E3A1E"
+                    height: units.gu(5.5); radius: units.dp(8)
                     visible: bookDetailPage.isDownloading
-                    Label { anchors.centerIn: parent; text: "Downloading…"
-                            fontSize: "medium"; font.weight: Font.Medium; color: "#4CAF50" }
+                    // Dark track
+                    color: root.isDarkMode ? "#1A1A1A" : "#E8E8E8"
+                    clip: true
+
+                    // Mahogany brown fill — same border radius, grows left to right
+                    Rectangle {
+                        id: progressFill
+                        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                        width: parent.width * (bookDetailPage.downloadProgress / 100)
+                        radius: units.dp(8)
+                        color: "#6B3A20"
+                        Behavior on width { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                    }
+
+                    // Spinner + status text on top
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: units.gu(1)
+
+                        // Rotating spinner ring
+                        Rectangle {
+                            id: spinnerRing
+                            width: units.gu(2.2); height: units.gu(2.2)
+                            radius: width / 2
+                            color: "transparent"
+                            border.color: "#FFFFFF"; border.width: units.dp(1.5)
+                            anchors.verticalCenter: parent.verticalCenter
+                            opacity: 0.45
+
+                            // Cut a gap to make it look like a spinner arc
+                            Rectangle {
+                                width: units.dp(3); height: units.dp(3)
+                                color: progressFill.width > units.gu(2)
+                                       ? "#6B3A20"
+                                       : (root.isDarkMode ? "#1A1A1A" : "#E8E8E8")
+                                anchors { top: parent.top; horizontalCenter: parent.horizontalCenter }
+                            }
+
+                            RotationAnimation on rotation {
+                                running: bookDetailPage.isDownloading
+                                loops: Animation.Infinite
+                                from: 0; to: 360; duration: 900
+                            }
+                        }
+
+                        Label {
+                            text: bookDetailPage.downloadStatus !== ""
+                                  ? bookDetailPage.downloadStatus : "Starting..."
+                            fontSize: "small"; font.weight: Font.Light
+                            color: "#FFFFFF"; opacity: 0.65
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    // Percent label — right side
+                    Label {
+                        anchors { right: parent.right; rightMargin: units.gu(1.5)
+                                  verticalCenter: parent.verticalCenter }
+                        text: bookDetailPage.downloadProgress + "%"
+                        fontSize: "x-small"; color: "#FFFFFF"; opacity: 0.45
+                    }
                 }
 
+                // Already in library
                 Rectangle {
                     anchors { left: parent.left; right: parent.right
                               leftMargin: units.gu(2); rightMargin: units.gu(2) }
                     height: units.gu(5.5); radius: units.dp(8); color: "#0D1F0D"
                     border.color: "#2C5F2E"; border.width: units.dp(1)
                     visible: bookDetailPage.alreadyInLib && !bookDetailPage.isDownloading
-                    Label { anchors.centerIn: parent; text: "✓ Already in your Library"
+                    Label { anchors.centerIn: parent; text: "In your Library"
                             fontSize: "small"; color: "#4CAF50" }
-                }
-
-                Rectangle {
-                    anchors { left: parent.left; right: parent.right
-                              leftMargin: units.gu(2); rightMargin: units.gu(2) }
-                    height: units.gu(0.5); radius: height / 2
-                    color: root.isDarkMode ? "#2A2A2A" : "#E0E0E0"
-                    visible: bookDetailPage.isDownloading
-                    Rectangle {
-                        width: parent.width * (bookDetailPage.downloadProgress / 100)
-                        height: parent.height; radius: parent.radius; color: "#4CAF50"
-                        Behavior on width { NumberAnimation { duration: 200 } }
-                    }
-                }
-                Label {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: bookDetailPage.downloadStatus; fontSize: "x-small"; color: "#4CAF50"
-                    visible: bookDetailPage.downloadStatus !== ""
                 }
                 Item { width: parent.width; height: units.gu(1) }
             }
@@ -281,7 +363,7 @@ Page {
             Rectangle { width: parent.width; height: units.dp(1)
                         color: root.isDarkMode ? "#2A2A2A" : "#E0E0E0" }
 
-            // Subjects
+            // ── Subjects ──────────────────────────────────────────────────────
             Item {
                 visible: bookDetailPage.book
                          ? ((bookDetailPage.book.subjects || []).length > 0) : false
@@ -313,46 +395,17 @@ Page {
 
     // ── Functions ─────────────────────────────────────────────────────────────
 
-    function fetchDescription(book) {
-        descLoading = true; bookDescription = ""
-        // Wikipedia summary API — fast, reliable, returns clean extract
-        var title = (book.title || "").replace(/[^\w\s]/g, " ").trim().replace(/\s+/g, "_")
-        var xhr = new XMLHttpRequest()
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState !== XMLHttpRequest.DONE) return
-            descLoading = false
-            if (xhr.status === 200) {
-                try {
-                    var data = JSON.parse(xhr.responseText)
-                    if (data.extract && data.extract.length > 20) {
-                        bookDescription = _truncate(data.extract, 80)
-                        return
-                    }
-                } catch(e) { console.log("Wiki parse error:", e) }
-            }
-            // Fallback: subjects list
-            if (book.subjects && book.subjects.length > 0)
-                bookDescription = "Subjects: " + book.subjects.slice(0, 4).join(", ") + "."
-            else
-                bookDescription = ""
-        }
-        xhr.open("GET", "https://en.wikipedia.org/api/rest_v1/page/summary/" +
-                 encodeURIComponent(title))
-        xhr.send()
-    }
-
-    function _truncate(text, maxWords) {
-        var clean = text.replace(/<[^>]+>/g, " ").replace(/\n+/g, " ").trim()
-        var words = clean.split(/\s+/).filter(function(w) { return w.length > 0 })
-        return words.length <= maxWords ? clean : words.slice(0, maxWords).join(" ") + "…"
-    }
-
-    function downloadBook(book) {
+    function startDownload(book) {
         if (!book || !book.epub_url) return
-        isDownloading = true; downloadProgress = 5; downloadStatus = "Adding to library…"
+        isDownloading    = true
+        downloadProgress = 3
+        downloadStatus   = "Adding to library..."
+        _pendingBookId   = book.id
+        _pendingEpubUrl  = book.epub_url || ""
 
-        // Step 1: Insert record into SQLite with remote URLs
-        var ok = Library.addBook({
+        // Insert SQLite record immediately — epub_url is always stored so we can
+        // stream the book even before the local file download completes.
+        Library.addBook({
             id:             book.id,
             title:          book.title,
             author_id:      book.author_id,
@@ -371,88 +424,148 @@ Page {
             birth_year:     book.birth_year || 0,
             death_year:     book.death_year || 0
         })
-        console.log("Library.addBook:", ok ? "inserted" : "already exists")
 
-        // Step 2: Download cover image to device storage
-        downloadProgress = 15; downloadStatus = "Downloading cover…"
-        _downloadCover(book, function(coverPath) {
-            if (coverPath) {
-                Library.updateCoverLocal(book.id, coverPath)
-                console.log("Cover saved:", coverPath)
-            } else {
-                console.log("Cover download skipped or failed — using remote URL")
-            }
-
-            // Step 3: Download EPUB to device storage
-            downloadProgress = 35; downloadStatus = "Downloading EPUB…"
-            _downloadEpub(book, function(epubPath) {
-                if (epubPath) {
-                    Library.updateFilePath(book.id, epubPath)
-                    console.log("EPUB saved:", epubPath)
-                    downloadProgress = 100
-                    downloadStatus   = "Saved to device ✓"
-                } else {
-                    console.log("EPUB file write failed — streaming will be used")
-                    downloadProgress = 100
-                    downloadStatus   = "Added to Library ✓"
+        // Download via XHR — runs inside the app process which has the networking
+        // AppArmor policy. Lomiri.DownloadManager runs as a separate daemon with
+        // its own policy that cannot reliably reach external hosts.
+        if (book.cover && book.cover !== "") {
+            downloadStatus = "Downloading cover..."
+            _xhrFetch(book.cover, function(data) {
+                if (data) {
+                    var dest = Library.coverPath(book.id)
+                    if (_xhrPut(dest, data)) {
+                        Library.updateCoverLocal(_pendingBookId, dest)
+                        console.log("Cover saved:", dest)
+                    }
                 }
-                isDownloading = false
-                alreadyInLib  = true
-            })
-        })
+                downloadProgress = 30
+                _downloadEpub()
+            }, function(err) {
+                console.log("Cover fetch failed:", err)
+                downloadProgress = 30
+                _downloadEpub()
+            }, false)  // cover = small file, weight 0-30%
+        } else {
+            downloadProgress = 30
+            _downloadEpub()
+        }
     }
 
-    function _downloadCover(book, cb) {
-        if (!book.cover || book.cover === "") { cb(null); return }
-        var path = Library.COVERS_DIR + "/" + book.id + ".jpg"
+    function _downloadEpub() {
+        downloadStatus = "Downloading book..."
+        _xhrFetch(_pendingEpubUrl, function(data) {
+            if (data) {
+                var dest = Library.bookPath(_pendingBookId)
+                if (_xhrPut(dest, data)) {
+                    Library.updateFilePath(_pendingBookId, dest)
+                    console.log("EPUB saved:", dest)
+                    downloadStatus = "Saved to device"
+                } else {
+                    downloadStatus = "Added to library"
+                }
+            } else {
+                downloadStatus = "Added to library"
+            }
+            downloadProgress = 100
+            finishTimer.start()
+        }, function(err) {
+            console.log("EPUB fetch failed:", err)
+            downloadStatus = "Added to library"
+            downloadProgress = 100
+            finishTimer.start()
+        }, true)  // epub = large file, weight 30-100%
+    }
+
+    // Async XHR GET with arraybuffer + progress reporting
+    // isLarge: if true, progress maps to 30-100%; if false, 0-30%
+    function _xhrFetch(url, onSuccess, onError, isLarge) {
         var xhr = new XMLHttpRequest()
         xhr.responseType = "arraybuffer"
+        xhr.onprogress = function(ev) {
+            if (ev.lengthComputable && ev.total > 0) {
+                var pct = ev.loaded / ev.total
+                bookDetailPage.downloadProgress = isLarge
+                    ? Math.round(30 + pct * 70)
+                    : Math.round(pct * 28)
+            }
+        }
         xhr.onreadystatechange = function() {
             if (xhr.readyState !== XMLHttpRequest.DONE) return
-            console.log("Cover fetch status:", xhr.status, "bytes:",
-                        xhr.response ? xhr.response.byteLength : 0)
-            if (xhr.status === 200 && xhr.response && xhr.response.byteLength > 0) {
-                var w = new XMLHttpRequest()
-                w.open("PUT", "file://" + path, false)
-                w.send(xhr.response)
-                console.log("Cover PUT status:", w.status, "path:", path)
-                // Status 0 is success on file:// scheme in Qt
-                cb((w.status === 0 || w.status === 200 || w.status === 201) ? path : null)
+            console.log("XHR", url.substr(0, 60), "status:", xhr.status,
+                        "bytes:", xhr.response ? xhr.response.byteLength : 0)
+            if ((xhr.status === 200 || xhr.status === 0) && xhr.response
+                    && xhr.response.byteLength > 0) {
+                onSuccess(xhr.response)
             } else {
-                cb(null)
+                onError("status " + xhr.status)
             }
         }
-        xhr.open("GET", book.cover)
+        xhr.open("GET", url)
         xhr.send()
     }
 
-    function _downloadEpub(book, cb) {
-        var path = Library.BOOKS_DIR + "/" + book.id + ".epub"
-        var xhr = new XMLHttpRequest()
-        xhr.responseType = "arraybuffer"
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState !== XMLHttpRequest.DONE) {
-                // Update progress during download
-                if (xhr.readyState === 3 && xhr.response)
-                    downloadProgress = 35 + Math.min(60,
-                        Math.floor((xhr.response.byteLength / 500000) * 60))
-                return
-            }
-            console.log("EPUB fetch status:", xhr.status, "bytes:",
-                        xhr.response ? xhr.response.byteLength : 0)
-            if (xhr.status === 200 && xhr.response && xhr.response.byteLength > 0) {
-                downloadStatus = "Saving EPUB to device…"
-                var w = new XMLHttpRequest()
-                w.open("PUT", "file://" + path, false)
-                w.send(xhr.response)
-                console.log("EPUB PUT status:", w.status, "path:", path)
-                cb((w.status === 0 || w.status === 200 || w.status === 201) ? path : null)
-            } else {
-                cb(null)
-            }
+    // XHR PUT arraybuffer to file:// path.
+    // The parent dir MUST already exist — Qt cannot create intermediate dirs.
+    // APP_DATA_DIR (~/.local/share/bearthen.russs95) is guaranteed by Qt/LocalStorage.
+    // We write files flat into that dir (no subdirs) to avoid this constraint.
+    function _xhrPut(path, data) {
+        try {
+            var w = new XMLHttpRequest()
+            w.open("PUT", "file://" + path, false)
+            w.send(data)
+            var ok = (w.status === 0 || w.status === 200 || w.status === 201)
+            console.log("PUT", path.split("/").pop(), "status:", w.status, "ok:", ok)
+            return ok
+        } catch(e) {
+            console.log("PUT exception:", e)
+            return false
         }
-        xhr.open("GET", book.epub_url)
+    }
+
+    function fetchDescription(book) {
+        descLoading = true; bookDescription = ""
+        // Clean title safely without regex char classes that confuse Qt 5.12 parser
+        var rawTitle = (book.title || "").split(";")[0].split(":")[0].trim()
+        var titleChars = []
+        for (var ci = 0; ci < rawTitle.length; ci++) {
+            var ch = rawTitle.charCodeAt(ci)
+            var isAlNum = (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122)
+                          || (ch >= 48 && ch <= 57) || ch === 32
+            titleChars.push(isAlNum ? rawTitle[ci] : " ")
+        }
+        var title = titleChars.join("").trim().replace(/ +/g, "_")
+        var xhr = new XMLHttpRequest()
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState !== XMLHttpRequest.DONE) return
+            descLoading = false
+            if (xhr.status === 200) {
+                try {
+                    var data = JSON.parse(xhr.responseText)
+                    if (data.extract && data.extract.length > 20) {
+                        bookDescription = _truncate(data.extract, 80); return
+                    }
+                } catch(e) {}
+            }
+            if (book.subjects && book.subjects.length > 0)
+                bookDescription = "Subjects: " + book.subjects.slice(0, 4).join(", ") + "."
+        }
+        xhr.open("GET", "https://en.wikipedia.org/api/rest_v1/page/summary/" +
+                 encodeURIComponent(title))
         xhr.send()
+    }
+
+    function _truncate(text, maxWords) {
+        // Strip HTML tags without using > inside regex char class (Qt 5.12 parser bug)
+        var clean = text
+        while (clean.indexOf("<") !== -1) {
+            var open = clean.indexOf("<")
+            var close = clean.indexOf(">", open)
+            if (close === -1) break
+            clean = clean.substring(0, open) + " " + clean.substring(close + 1)
+        }
+        clean = clean.replace(/\n+/g, " ").trim()
+        var words = clean.split(/\s+/).filter(function(w) { return w.length > 0 })
+        return words.length <= maxWords ? clean : words.slice(0, maxWords).join(" ") + "…"
     }
 
     function _guessCategory(subjects) {
@@ -468,4 +581,5 @@ Page {
         if (s.indexOf("earth") !== -1 || s.indexOf("ecology") !== -1) return "earthen"
         return "non-fiction"
     }
+
 }
