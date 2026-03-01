@@ -1,436 +1,1054 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Bearthen Reader</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Bearthen Reader</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        body {
-            background: #111111;
-            color: #E8E0D0;
-            font-family: Georgia, serif;
-            height: 100vh;
-            overflow: hidden;
-            user-select: none;
-            -webkit-user-select: none;
-        }
+  body {
+    background: #111111;
+    color: #E8E0D0;
+    font-family: Georgia, serif;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
 
-        /* ── Loading screen ───────────────────────────────────────── */
-        #loading {
-            position: fixed; inset: 0;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            background: #111111; z-index: 100; gap: 24px;
-        }
-        #loading .spinner {
-            width: 36px; height: 36px;
-            border: 2px solid #2A1508;
-            border-top-color: #8B5A32;
-            border-radius: 50%;
-            animation: spin 0.9s linear infinite;
-        }
-        #loading .load-title {
-            color: #8B5A32; font-size: 22px; font-weight: 300;
-            font-family: Georgia, serif; letter-spacing: 3px;
-        }
-        #loading .load-sub {
-            color: #444; font-size: 13px; font-family: sans-serif;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+  /* ── Loading ──────────────────────────────────────────────── */
+  #loading {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #111111; z-index: 100; gap: 24px;
+  }
+  #loading .spinner {
+    width: 8vw; height: 8vw;
+    border: 0.4vw solid #2A1508;
+    border-top-color: #8B5A32;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  #loading .load-title {
+    color: #8B5A32; font-size: 5vw; font-weight: 300;
+    font-family: Georgia, serif; letter-spacing: 0.6vw;
+  }
+  #loading .load-sub { color: #444; font-size: 3vw; font-family: sans-serif; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ── Error screen ─────────────────────────────────────────── */
-        #error {
-            position: fixed; inset: 0;
-            display: none; flex-direction: column;
-            align-items: center; justify-content: center;
-            background: #111111; z-index: 100; gap: 16px; padding: 40px;
-        }
-        #error .err-icon { font-size: 48px; }
-        #error .err-title { color: #CC4444; font-size: 18px; font-family: sans-serif; }
-        #error .err-msg {
-            color: #666; font-size: 13px; font-family: sans-serif;
-            text-align: center; line-height: 1.7;
-        }
+  /* ── Error ────────────────────────────────────────────────── */
+  #error {
+    position: fixed; inset: 0;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #111111; z-index: 100; gap: 16px; padding: 40px;
+  }
+  #error .err-icon { font-size: 48px; }
+  #error .err-title { color: #CC4444; font-size: 18px; font-family: sans-serif; }
+  #error .err-msg {
+    color: #666; font-size: 13px; font-family: sans-serif;
+    text-align: center; line-height: 1.7;
+  }
 
-        /* ── Reader ───────────────────────────────────────────────── */
-        #reader {
-            position: fixed; inset: 0;
-            opacity: 0; transition: opacity 0.5s ease;
-        }
-        #reader.ready { opacity: 1; }
+  /* ── Reader ───────────────────────────────────────────────── */
+  #reader { position: fixed; inset: 0; opacity: 0; transition: opacity 0.5s ease; }
+  #reader.ready { opacity: 1; }
 
-        #viewer {
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            bottom: 68px;
-        }
+  #viewer {
+    position: absolute;
+    top: 4vh; left: 0; right: 0; bottom: 3vh;
+    overflow: hidden;
+    /* top:4vh pushes content down — more breathing room at top.
+       Height is set explicitly by JS using QML-supplied vw/vh params. */
+  }
 
-        /* ── Swipe/tap overlay — full screen, transparent ────────── */
-        #touch-layer {
-            position: absolute; inset: 0;
-            z-index: 10;
-        }
+  /* ── Touch layer ──────────────────────────────────────────── */
+  #touch-layer { position: absolute; inset: 0; z-index: 10; }
 
-        /* ── Bottom bar ───────────────────────────────────────────── */
-        #bottom-bar {
-            position: absolute; bottom: 0; left: 0; right: 0; height: 68px;
-            background: rgba(10,10,10,0.96);
-            border-top: 1px solid #1E1E1E;
-            display: flex; align-items: center;
-            padding: 0 20px; gap: 14px;
-            transition: transform 0.3s ease, opacity 0.3s ease;
-        }
-        #bottom-bar.hidden {
-            transform: translateY(68px);
-            opacity: 0;
-            pointer-events: none;
-        }
+  /* ── Bottom bar ───────────────────────────────────────────── */
+  #bottom-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 3vh;
+    background: rgba(8,8,8,0.97);
+    border-top: 1px solid #1C1C1C;
+    display: flex; align-items: center;
+    padding: 0 4vw; gap: 3vw;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
+  #bottom-bar.hidden { transform: translateY(3vh); opacity: 0; pointer-events: none; }
 
-        .font-btn {
-            color: #555; cursor: pointer;
-            font-family: Georgia, serif;
-            padding: 8px 10px; border-radius: 6px;
-            transition: color 0.15s, background 0.15s;
-            flex-shrink: 0;
-        }
-        #font-down { font-size: 14px; }
-        #font-up   { font-size: 18px; }
-        .font-btn:active { color: #8B5A32; background: #1E1E1E; }
+  #progress-track {
+    flex: 1; height: 3px; background: #2A2A2A; border-radius: 2px;
+    cursor: pointer; position: relative; touch-action: none;
+  }
+  #progress-fill {
+    height: 100%; background: #8B5A32; border-radius: 2px;
+    width: 0%; transition: width 0.4s ease; pointer-events: none;
+  }
+  #progress-track::before {
+    content: ''; position: absolute; top: -14px; bottom: -14px; left: 0; right: 0;
+  }
+  #pct-label {
+    color: #555; min-width: 8vw; text-align: right;
+    font-family: sans-serif; font-size: 2.8vw; flex-shrink: 0;
+  }
 
-        #progress-track {
-            flex: 1; height: 4px; background: #2A2A2A; border-radius: 2px;
-            cursor: pointer; position: relative; touch-action: none;
-        }
-        #progress-fill {
-            height: 100%; background: #8B5A32; border-radius: 2px;
-            width: 0%; transition: width 0.4s ease;
-            pointer-events: none;
-        }
-        /* Fat touch target over the slim track */
-        #progress-track::before {
-            content: ''; position: absolute;
-            top: -12px; bottom: -12px; left: 0; right: 0;
-        }
-        #pct-label {
-            color: #8B5A32; min-width: 36px; text-align: right;
-            font-family: sans-serif; font-size: 12px; flex-shrink: 0;
-        }
-    </style>
+  /* ── TOC overlay ─────────────────────────────────────────── */
+  #toc-overlay {
+    position: fixed; inset: 0; z-index: 45;
+    background: rgba(0,0,0,0.7);
+    display: flex; flex-direction: row; justify-content: flex-start;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  #toc-overlay.open { opacity: 1; pointer-events: all; }
+  #toc-dismiss { flex: 1; }
+  #toc-panel {
+    width: 90vw;
+    background: #1A1A1A;
+    border-radius: 0 0 3vw 3vw;
+    display: flex; flex-direction: column;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    overflow: hidden;
+  }
+  #toc-overlay.open #toc-panel { transform: translateX(0); }
+  #toc-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 3vh 5vw 2vh 5vw;
+    border-bottom: 1px solid #252525;
+    flex-shrink: 0;
+  }
+  #toc-title {
+    font-family: Georgia, serif; font-size: 4.5vw; font-weight: 300;
+    color: #C8A070; letter-spacing: 0.3vw;
+  }
+  #toc-close {
+    background: none; border: none; color: #555;
+    font-size: 5vw; cursor: pointer; padding: 0 1vw;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #toc-list {
+    flex: 1; overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 1vh 0 4vh 0;
+  }
+  .toc-item {
+    display: block; width: 100%; padding: 2.2vh 5vw;
+    background: none; border: none; text-align: left;
+    font-family: Georgia, serif; font-size: 3.8vw; font-weight: 300;
+    color: #AAAAAA; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    border-bottom: 1px solid #1E1E1E;
+    transition: color 0.1s;
+  }
+  .toc-item.active { color: #C8A070; }
+  .toc-item:active { background: #1E1008; color: #C8A070; }
+  .toc-item-depth2 { padding-left: 9vw; font-size: 3.4vw; color: #777; }
+  .toc-item-depth3 { padding-left: 13vw; font-size: 3vw; color: #555; }
+
+  /* ── Settings overlay ─────────────────────────────────────── */
+  #settings-overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(0,0,0,0.65);
+    display: flex; flex-direction: column; justify-content: flex-end;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  #settings-overlay.open { opacity: 1; pointer-events: all; }
+
+  #settings-panel {
+    background: #1A1A1A;
+    border-radius: 3vw 3vw 0 0;
+    height: var(--panel-h, 77vh);
+    max-height: 90vh;
+    min-height: 40vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    touch-action: none;
+  }
+  #settings-overlay.open #settings-panel { transform: translateY(0); }
+  #settings-panel.dragging { transition: none; }
+
+  /* drag handle */
+  #settings-handle {
+    flex-shrink: 0;
+    padding: 1.5vh 0 0.5vh 0;
+    display: flex; justify-content: center;
+  }
+  #settings-handle::after {
+    content: ''; display: block;
+    width: 10vw; height: 0.6vh;
+    background: #333; border-radius: 1vw;
+  }
+
+  /* Scrollable content area — all rows live here */
+  #settings-scroll {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    /* Extra padding at bottom so last button isn't hidden behind the app nav bar */
+    padding-bottom: 12vh;
+  }
+
+  /* Section title */
+  .settings-section-title {
+    font-family: sans-serif; font-size: 2.8vw;
+    color: #444; text-transform: uppercase; letter-spacing: 0.4vw;
+    padding: 2.5vh 5vw 1.2vh 5vw;
+  }
+
+  /* Each setting group: label above, buttons stacked below */
+  .settings-group {
+    padding: 0.5vh 5vw 2vh 5vw;
+  }
+  .settings-label {
+    font-family: sans-serif; font-size: 3vw;
+    color: #555; margin-bottom: 1.2vh; display: block;
+  }
+
+  /* Full-width vertical button stack */
+  .settings-options { display: flex; flex-direction: column; gap: 1.2vh; }
+
+  .opt-btn {
+    width: 100%;
+    padding: 2.2vh 4vw;
+    min-height: 7.5vh;
+    border-radius: 2vw;
+    border: 1px solid #252525;
+    background: #141414;
+    color: #888;
+    font-family: sans-serif; font-size: 4vw;
+    cursor: pointer;
+    text-align: left;
+    display: flex; align-items: center; gap: 3vw;
+    transition: all 0.12s;
+    -webkit-tap-highlight-color: transparent;
+    position: relative;
+    box-sizing: border-box;
+  }
+  /* Active indicator dot on the right */
+  .opt-btn::after {
+    content: '';
+    position: absolute; right: 4vw; top: 50%; transform: translateY(-50%);
+    width: 2vw; height: 2vw; border-radius: 50%;
+    background: transparent;
+    transition: background 0.15s;
+  }
+  .opt-btn.active {
+    border-color: #3A2010;
+    background: #1E1008;
+    color: #C8A070;
+  }
+  .opt-btn.active::after { background: #8B5A32; }
+  .opt-btn:active { opacity: 0.6; }
+
+  /* Theme button colour swatches (left dot) */
+  .opt-btn.theme-dark::before  { content:''; width:4vw;height:4vw;border-radius:50%;background:#111;border:1px solid #444;flex-shrink:0; }
+  .opt-btn.theme-sepia::before { content:''; width:4vw;height:4vw;border-radius:50%;background:#C8A070;border:1px solid #6B4020;flex-shrink:0; }
+  .opt-btn.theme-light::before { content:''; width:4vw;height:4vw;border-radius:50%;background:#F0EDE0;border:1px solid #CCC;flex-shrink:0; }
+
+  /* Font preview in button text */
+  .opt-btn.font-georgia { font-family: Georgia, serif; }
+  .opt-btn.font-sans    { font-family: sans-serif; }
+  .opt-btn.font-mono    { font-family: monospace; font-size: 3.5vw; }
+
+  /* Font size stepper — inline row within a group */
+  .size-stepper {
+    display: flex; align-items: center; gap: 0;
+    background: #141414; border: 1px solid #252525;
+    border-radius: 2vw; overflow: hidden;
+    min-height: 9vh;
+  }
+  .size-btn {
+    width: 18vw; height: 9vh;
+    background: transparent;
+    border: none;
+    color: #888;
+    font-size: 7vw; line-height: 1;
+    cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    transition: all 0.12s;
+  }
+  .size-btn:active { background: #1E1008; color: #C8A070; }
+  #size-display {
+    flex: 1; text-align: center;
+    font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    color: #C8A070;
+    font-size: 5.5vw; font-weight: 300;
+    pointer-events: none;
+  }
+
+  /* Divider */
+  .settings-divider { height: 1px; background: #1E1E1E; margin: 0.5vh 5vw; }
+</style>
 </head>
 <body>
 
 <div id="loading">
-    <div class="spinner"></div>
-    <div class="load-title">bearthen</div>
-    <div class="load-sub" id="load-msg">Opening book…</div>
+  <div class="spinner"></div>
+  <div class="load-sub" id="load-msg">Opening book…</div>
 </div>
 
 <div id="error">
-    <div class="err-icon">📖</div>
-    <div class="err-title">Could not open book</div>
-    <div class="err-msg" id="err-msg">The EPUB file could not be loaded.</div>
+  <div class="err-icon">📖</div>
+  <div class="err-title">Could not open book</div>
+  <div class="err-msg" id="err-msg">The EPUB file could not be loaded.</div>
 </div>
 
 <div id="reader">
-    <div id="viewer"></div>
-    <div id="touch-layer"></div>
-    <div id="bottom-bar">
-        <span id="font-down" class="font-btn">A−</span>
-        <div id="progress-track">
-            <div id="progress-fill"></div>
-        </div>
-        <span id="pct-label">0%</span>
-        <span id="font-up" class="font-btn">A+</span>
-    </div>
+  <div id="viewer"></div>
+  <div id="touch-layer"></div>
+
+  <div id="bottom-bar" class="hidden">
+    <div id="progress-track"><div id="progress-fill"></div></div>
+    <span id="pct-label">0%</span>
+  </div>
 </div>
+
+<!-- TOC overlay: panel LEFT, dismiss RIGHT -->
+<div id="toc-overlay">
+  <div id="toc-panel">
+    <div id="toc-header">
+      <span id="toc-title">Contents</span>
+      <button id="toc-close" onclick="readerToc.close()">✕</button>
+    </div>
+    <div id="toc-list"></div>
+  </div>
+  <div id="toc-dismiss"></div>
+</div>
+
+<!-- Settings overlay — triggered by QML gear icon via runJavaScript -->
+<div id="settings-overlay">
+  <!-- tap outside panel to close -->
+  <div style="flex:1" id="settings-dismiss"></div>
+
+  <div id="settings-panel">
+    <div id="settings-handle"></div>
+    <div id="settings-scroll">
+
+    <!-- ── App Menu toggle (top — most likely to be wanted first) ── -->
+    <div class="settings-group" style="padding-top:2vh">
+      <div class="settings-options">
+        <button class="opt-btn" id="hide-nav-btn"
+                onclick="readerSettings.toggleNav()"
+                style="justify-content:center; color:#8B5A32; border-color:#2A1508;">
+          Show Bearthen Menu
+        </button>
+      </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- ── Text Size ──────────────────────────────────────────── -->
+    <p class="settings-section-title">Text Size</p>
+
+    <div class="settings-group">
+      <div class="size-stepper">
+        <button class="size-btn" onclick="readerSettings.changeFontSize(-25)">−</button>
+        <span id="size-display">150%</span>
+        <button class="size-btn" onclick="readerSettings.changeFontSize(+25)">+</button>
+      </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- ── Appearance ─────────────────────────────────────── -->
+    <p class="settings-section-title">Appearance</p>
+
+    <div class="settings-group">
+      <span class="settings-label">Theme</span>
+      <div class="settings-options">
+        <button class="opt-btn theme-dark active" id="theme-dark"  onclick="readerSettings.setTheme('dark')">Dark</button>
+        <button class="opt-btn theme-sepia"       id="theme-sepia" onclick="readerSettings.setTheme('sepia')">Sepia</button>
+        <button class="opt-btn theme-light"       id="theme-light" onclick="readerSettings.setTheme('light')">Light</button>
+      </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- ── Typography ─────────────────────────────────────── -->
+    <p class="settings-section-title">Typography</p>
+
+    <div class="settings-group">
+      <span class="settings-label">Font</span>
+      <div class="settings-options">
+        <button class="opt-btn font-georgia active" id="font-georgia" onclick="readerSettings.setFontFamily('georgia')">Serif — Georgia</button>
+        <button class="opt-btn font-sans"           id="font-sans"    onclick="readerSettings.setFontFamily('sans')">Sans-serif</button>
+        <button class="opt-btn font-mono"           id="font-mono"    onclick="readerSettings.setFontFamily('mono')">Monospace</button>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <span class="settings-label">Line Spacing</span>
+      <div class="settings-options">
+        <button class="opt-btn" id="spacing-tight"   onclick="readerSettings.setSpacing('tight')">Tight</button>
+        <button class="opt-btn active" id="spacing-normal" onclick="readerSettings.setSpacing('normal')">Normal</button>
+        <button class="opt-btn" id="spacing-relaxed" onclick="readerSettings.setSpacing('relaxed')">Relaxed</button>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <span class="settings-label">Margins</span>
+      <div class="settings-options">
+        <button class="opt-btn" id="margin-narrow"  onclick="readerSettings.setMargins('narrow')">Narrow</button>
+        <button class="opt-btn active" id="margin-normal" onclick="readerSettings.setMargins('normal')">Normal</button>
+        <button class="opt-btn" id="margin-wide"    onclick="readerSettings.setMargins('wide')">Wide</button>
+      </div>
+    </div>
+    <!-- Keep scroll padding so margins buttons clear the app footer -->
+
+    </div><!-- /settings-scroll -->
+  </div><!-- /settings-panel -->
+</div><!-- /settings-overlay -->
 
 <script src="./jszip.min.js"></script>
 <script src="./epub.min.js"></script>
 
 <script>
-    (function() {
-        'use strict';
+(function() {
+  'use strict';
 
-        // ── URL params ───────────────────────────────────────────────────────────
-        function getParam(name) {
-            var idx = location.href.indexOf('?');
-            if (idx === -1) return '';
-            var pairs = location.href.substring(idx + 1).split('&');
-            for (var i = 0; i < pairs.length; i++) {
-                var eq = pairs[i].indexOf('=');
-                if (eq < 0) continue;
-                if (decodeURIComponent(pairs[i].substring(0, eq)) === name)
-                    return decodeURIComponent(pairs[i].substring(eq + 1));
-            }
-            return '';
+  // ── URL params ───────────────────────────────────────────────────────────
+  function getParam(name) {
+    var idx = location.href.indexOf('?');
+    if (idx === -1) return '';
+    var pairs = location.href.substring(idx + 1).split('&');
+    for (var i = 0; i < pairs.length; i++) {
+      var eq = pairs[i].indexOf('=');
+      if (eq < 0) continue;
+      if (decodeURIComponent(pairs[i].substring(0, eq)) === name)
+        return decodeURIComponent(pairs[i].substring(eq + 1));
+    }
+    return '';
+  }
+
+  var epubUrl   = getParam('url');
+  var startPct  = parseFloat(getParam('percent')) || 0;
+  var bookTitle = getParam('title') || 'Book';
+
+  // ── Current preferences (start with sensible defaults) ──────────────────
+  // Font size steps: [displayPct, cssInternalPct] pairs
+  var fontSizeSteps = [
+    [75,  200], [100, 270], [125, 330], [150, 385],
+    [175, 435], [200, 490], [225, 540], [250, 585],
+    [300, 630], [350, 660], [400, 685], [500, 700]
+  ];
+  var defaultFontStep = 3; // index 3 = display 150%
+
+  var prefs = {
+    fontSize:   fontSizeSteps[defaultFontStep][1],
+    fontStep:   defaultFontStep,
+    fontFamily: 'georgia',
+    theme:      'dark',
+    spacing:    'normal',
+    margins:    'normal'
+  };
+
+  // Load persisted prefs from URL params if present
+  if (getParam('fontsize')) {
+    var savedCss = parseInt(getParam('fontsize')) || fontSizeSteps[defaultFontStep][1];
+    prefs.fontSize = savedCss;
+    // Find closest step
+    var bestIdx = 0, bestDist = 9999;
+    for (var si = 0; si < fontSizeSteps.length; si++) {
+      var dist = Math.abs(fontSizeSteps[si][1] - savedCss);
+      if (dist < bestDist) { bestDist = dist; bestIdx = si; }
+    }
+    prefs.fontStep = bestIdx;
+  }
+  if (getParam('fontfamily')) prefs.fontFamily  = getParam('fontfamily');
+  if (getParam('theme'))      prefs.theme       = getParam('theme');
+  if (getParam('spacing'))    prefs.spacing     = getParam('spacing');
+  if (getParam('margins'))    prefs.margins     = getParam('margins');
+
+  document.getElementById('load-msg').textContent = 'Opening book…';
+  if (!epubUrl) { showError('No EPUB URL provided.'); return; }
+
+  // ── Theme definitions ────────────────────────────────────────────────────
+  var themes = {
+    dark:  { bg: '#111111', text: '#DDD8CC', heading: '#C8B89A', link: '#8B5A32', bodyBg: '#111111' },
+    sepia: { bg: '#F5EAD0', text: '#3A2A14', heading: '#5A3A14', link: '#8B5A32', bodyBg: '#F5EAD0' },
+    light: { bg: '#FAFAFA', text: '#1A1A1A', heading: '#333333', link: '#2C5F2E', bodyBg: '#FAFAFA' }
+  };
+
+  var spacingValues = { tight: '1.4', normal: '1.75', relaxed: '2.1' };
+  // marginValues computed dynamically in applyFullTheme based on pageW
+  var fontValues    = {
+    georgia: "Georgia, 'Times New Roman', serif",
+    sans:    "-apple-system, 'Helvetica Neue', Arial, sans-serif",
+    mono:    "'Courier New', Courier, monospace"
+  };
+
+  // ── Book & rendition ─────────────────────────────────────────────────────
+  var book, rendition;
+  var currentPct    = startPct;
+  var barsVisible   = false;  // start hidden — show on bottom tap
+  var autoHideTimer = null;
+  // Page dimensions — set once in openBook(), read by applyFullTheme()
+  // so column CSS can be injected via the theme (the reliable path in WebView).
+  var pageW = 0, pageH = 0;
+
+  window.addEventListener('load', function() {
+    if (typeof ePub === 'undefined') { showError('Could not load epub.js. Bundle missing?'); return; }
+    openBook();
+  });
+
+  function openBook() {
+    try { book = ePub(epubUrl); }
+    catch(e) { showError('Failed to open: ' + e.message); return; }
+
+    // Prefer QML-supplied dimensions (vw/vh URL params) — these come from
+    // QML's layout engine and are not distorted by system nav bars.
+    // Fall back to window.innerWidth/Height only if params absent (desktop testing).
+    var paramW = parseInt(getParam('vw'));
+    var paramH = parseInt(getParam('vh'));
+    var W = (paramW > 0) ? paramW : window.innerWidth;
+    // Subtract 4vh for the top offset so epub.js column height matches visible area
+    var topOffsetPx = Math.round(window.innerHeight * 0.04);
+    var H = (paramH > 0) ? (paramH - topOffsetPx) : (window.innerHeight - 56 - topOffsetPx);
+
+    console.log('Reader dimensions: ' + W + ' x ' + H +
+                ' (source: ' + (paramW > 0 ? 'QML params' : 'fallback') + ')' +
+                ' viewport=' + window.innerWidth + 'x' + window.innerHeight);
+
+    // Store for use in applyFullTheme — column CSS needs exact pixel values
+    pageW = W;
+    pageH = H;
+
+    rendition = book.renderTo('viewer', {
+      method:               'paginated',
+      width:                W,
+      height:               H,
+      spread:               'none',
+      allowScriptedContent: true
+    });
+
+    // Hook rendered event — belt-and-suspenders direct DOM injection.
+    // rendition.themes.register() (below) is the primary/reliable path;
+    // this catches any chapters where the theme hasn't applied yet.
+    rendition.on('rendered', function(section, view) {
+      try {
+        var doc = view.document || (view.iframe && (view.iframe.contentDocument ||
+                    (view.iframe.contentWindow && view.iframe.contentWindow.document)));
+        if (!doc || !doc.documentElement) return;
+        var html = doc.documentElement;
+        var body = doc.body;
+        var s = html.style;
+        s.setProperty('height',               pageH + 'px',  'important');
+        s.setProperty('overflow',             'hidden',       'important');
+        s.setProperty('-webkit-column-width', pageW + 'px',  'important');
+        s.setProperty('column-width',         pageW + 'px',  'important');
+        s.setProperty('-webkit-column-gap',   '0px',         'important');
+        s.setProperty('column-gap',           '0px',         'important');
+        s.setProperty('column-fill',          'auto',        'important');
+        if (body) {
+          body.style.setProperty('overflow', 'hidden', 'important');
+          body.style.setProperty('max-height', pageH + 'px', 'important');
         }
+        console.log('rendered: injected column CSS ' + pageW + 'x' + pageH);
+      } catch(e) {
+        console.log('rendered: direct DOM injection failed (expected): ' + e.message);
+      }
+    });
 
-        var epubUrl   = getParam('url');
-        var startPct  = parseFloat(getParam('percent')) || 0;
-        var bookTitle = getParam('title') || 'Book';
-        var fontSize  = 105;  // slightly larger default — comfortable on phone
+    applyFullTheme(false);   // register and select theme — injects column CSS too
 
-        document.getElementById('load-msg').textContent = 'Opening ' + bookTitle + '…';
-        if (!epubUrl) { showError('No EPUB URL provided.'); return; }
+    // ── Display from saved position ────────────────────────────────────────
+    if (startPct > 1) {
+      book.ready
+        .then(function() { return book.locations.generate(1024); })
+        .then(function() {
+          var cfi = book.locations.cfiFromPercentage(startPct / 100);
+          return rendition.display(cfi);
+        })
+        .catch(function() { rendition.display(); });
+    } else {
+      rendition.display();
+    }
 
-        // ── Book & rendition ─────────────────────────────────────────────────────
-        var book, rendition;
-        var currentPct  = startPct;
-        var barsVisible = true;
-        var autoHideTimer = null;
-
-        window.addEventListener('load', function() {
-            if (typeof ePub === 'undefined') {
-                showError('Could not load epub.js.\nBundle missing?');
-                return;
-            }
-            openBook();
-        });
-
-        function openBook() {
-            try { book = ePub(epubUrl); }
-            catch(e) { showError('Failed to open: ' + e.message); return; }
-
-            rendition = book.renderTo('viewer', {
-                method:   'paginated',
-                width:    '100%',
-                height:   '100%',
-                spread:   'none',           // single column — better on phone
-                allowScriptedContent: false
-            });
-
-            // ── Theme: inject into the epub iframe ─────────────────────────────────
-            // epub.js injects this CSS into every content document.
-            // Using !important on everything to beat EPUB's own stylesheet.
-            rendition.themes.register('bearthen', {
-                '*': {
-                    'box-sizing': 'border-box !important'
-                },
-                'html': {
-                    'background': '#111111 !important',
-                    'overflow-x': 'hidden !important'
-                },
-                'body': {
-                    'background':    '#111111 !important',
-                    'color':         '#DDD8CC !important',
-                    'font-family':   "Georgia, 'Times New Roman', serif !important",
-                    'font-size':     fontSize + '% !important',
-                    'line-height':   '1.75 !important',
-                    'max-width':     '100% !important',
-                    'margin':        '0 !important',
-                    'padding':       '8px 20px 8px 20px !important',
-                    '-webkit-font-smoothing': 'antialiased !important'
-                },
-                'p': {
-                    'margin':        '0 0 0.9em 0 !important',
-                    'text-align':    'justify !important',
-                    'text-indent':   '1.4em !important',
-                    'orphans':       '2 !important',
-                    'widows':        '2 !important'
-                },
-                'p:first-of-type, p.noindent': {
-                    'text-indent': '0 !important'
-                },
-                'h1, h2, h3, h4, h5, h6': {
-                    'color':         '#C8B89A !important',
-                    'font-weight':   '300 !important',
-                    'line-height':   '1.3 !important',
-                    'margin':        '1.2em 0 0.6em 0 !important',
-                    'text-indent':   '0 !important',
-                    'text-align':    'left !important'
-                },
-                'h1': { 'font-size': '1.5em !important' },
-                'h2': { 'font-size': '1.3em !important' },
-                'h3': { 'font-size': '1.1em !important' },
-                'a': {
-                    'color': '#8B5A32 !important',
-                    'text-decoration': 'none !important'
-                },
-                'a:hover': { 'text-decoration': 'underline !important' },
-                'em, i': { 'color': '#DDD8CC !important' },
-                'strong, b': {
-                    'color': '#EDE8E0 !important',
-                    'font-weight': '600 !important'
-                },
-                'blockquote': {
-                    'border-left':   '2px solid #3A2A1A !important',
-                    'margin':        '1em 0 1em 0 !important',
-                    'padding-left':  '1.2em !important',
-                    'color':         '#AAAAAA !important',
-                    'font-style':    'italic !important'
-                },
-                'img': {
-                    'max-width':  '100% !important',
-                    'height':     'auto !important',
-                    'display':    'block !important',
-                    'margin':     '1em auto !important'
-                },
-                'table': { 'color': '#DDD8CC !important' },
-                'hr': {
-                    'border': 'none !important',
-                    'border-top': '1px solid #2A2A2A !important',
-                    'margin': '1.5em 0 !important'
-                }
-            });
-            rendition.themes.select('bearthen');
-
-            // ── Display from saved position ────────────────────────────────────────
-            if (startPct > 1) {
-                book.ready
-                    .then(function() { return book.locations.generate(1024); })
-                    .then(function() {
-                        var cfi = book.locations.cfiFromPercentage(startPct / 100);
-                        return rendition.display(cfi);
-                    })
-                    .catch(function() { rendition.display(); });
-            } else {
-                rendition.display();
-            }
-
-            // ── Book ready ────────────────────────────────────────────────────────
-            book.ready.then(function() {
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('reader').classList.add('ready');
-                book.locations.generate(1024);   // async, for progress %
-                scheduleAutoHide();
-            }).catch(function(e) {
-                showError('Book failed to load: ' + (e.message || e));
-            });
-
-            // ── Position updates ──────────────────────────────────────────────────
-            rendition.on('relocated', function(location) {
-                if (!location || !location.start) return;
-                var raw = book.locations.percentageFromCfi(location.start.cfi) || 0;
-                var pct = Math.round(raw * 100);
-                updateProgress(pct);
-                reportPosition(pct);
-            });
-
-            rendition.on('keydown', handleKey);
+    var loadStartTime = Date.now();
+    book.ready.then(function() {
+      var elapsed = Date.now() - loadStartTime;
+      var delay   = Math.max(0, 2000 - elapsed);
+      setTimeout(function() {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('reader').classList.add('ready');
+        applyPageBg();
+        // Always force nav bar hidden when book opens — regardless of previous session
+        readerSettings._navHidden = true;
+        document.title = 'HIDE_NAV:1';
+        // Don't auto-schedule hide since bars start hidden
+      }, delay);
+      book.locations.generate(1024);
+      // Build TOC
+      book.loaded.navigation.then(function(nav) {
+        var list = document.getElementById('toc-list');
+        if (!list) return;
+        list.innerHTML = '';
+        if (nav && nav.toc && nav.toc.length > 0) {
+          buildTocList(nav.toc, 0);
+          console.log('TOC loaded:', nav.toc.length, 'items');
+        } else {
+          var el = document.createElement('div');
+          el.style.cssText = 'padding:4vh 5vw;color:#444;font-family:sans-serif;font-size:3.5vw;';
+          el.textContent = 'No table of contents available.';
+          list.appendChild(el);
         }
+      }).catch(function() {
+        console.log('TOC not available');
+      });
+    }).catch(function(e) {
+      showError('Book failed to load: ' + (e.message || e));
+    });
 
-        // ── Touch / swipe ─────────────────────────────────────────────────────────
-        var touchLayer = document.getElementById('touch-layer');
-        var touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+    rendition.on('relocated', function(location) {
+      if (!location || !location.start) return;
+      var raw = book.locations.percentageFromCfi(location.start.cfi) || 0;
+      var pct = Math.round(raw * 100);
+      updateProgress(pct);
+      reportPosition(pct);
+    });
 
-        touchLayer.addEventListener('touchstart', function(e) {
-            touchStartX    = e.touches[0].clientX;
-            touchStartY    = e.touches[0].clientY;
-            touchStartTime = Date.now();
-        }, { passive: true });
+    rendition.on('keydown', handleKey);
 
-        touchLayer.addEventListener('touchend', function(e) {
-            var dx   = e.changedTouches[0].clientX - touchStartX;
-            var dy   = e.changedTouches[0].clientY - touchStartY;
-            var dt   = Date.now() - touchStartTime;
-            var absDx = Math.abs(dx), absDy = Math.abs(dy);
+    // Handle orientation change — resize rendition to new window size.
+    // On orientation change, QML will reload the page with new vw/vh params
+    // so this listener is mainly a safety net.
+    window.addEventListener('resize', function() {
+      if (!rendition) return;
+      requestAnimationFrame(function() {
+        // Try QML params first; on resize they'll be stale, so use window
+        var newW = window.innerWidth;
+        var newH = window.innerHeight - 56;
+        rendition.resize(newW, newH);
+      });
+    });
+  }
 
-            // Swipe: fast, mostly horizontal, > 40px
-            if (dt < 400 && absDx > 40 && absDx > absDy * 1.5) {
-                if (dx < 0) { if (rendition) rendition.next(); }
-                else         { if (rendition) rendition.prev(); }
-                scheduleAutoHide();
-                return;
-            }
+  // ── Theme application ─────────────────────────────────────────────────────
+  function applyFullTheme(reselect) {
+    if (!rendition) return;
+    var t  = themes[prefs.theme];
+    var ff = fontValues[prefs.fontFamily] || fontValues.georgia;
+    var lh = spacingValues[prefs.spacing] || '1.75';
+    // Compute margins as % of page width so they're visible at any resolution
+    var baseW = pageW > 0 ? pageW : 1080;
+    var mgMap = {
+      narrow: Math.round(baseW * 0.03),   // ~3%  of page width
+      normal: Math.round(baseW * 0.08),   // ~8%  of page width
+      wide:   Math.round(baseW * 0.16)    // ~16% of page width
+    };
+    var mg = (mgMap[prefs.margins] || mgMap.normal) + 'px';
+    var fs = prefs.fontSize;
 
-            // Tap (short, small movement)
-            if (dt < 300 && absDx < 12 && absDy < 12) {
-                var w = window.innerWidth;
-                var x = e.changedTouches[0].clientX;
-                if (x < w * 0.25) {
-                    if (rendition) rendition.prev();
-                    scheduleAutoHide();
-                } else if (x > w * 0.65) {
-                    if (rendition) rendition.next();
-                    scheduleAutoHide();
-                } else {
-                    toggleBars();
-                }
-            }
-        }, { passive: true });
+    var css = {
+      '*':              { 'box-sizing': 'border-box !important' },
+      // ── Column pagination via theme (works when epub.js DOM access fails) ──
+      'html': {
+        'background':           t.bodyBg + ' !important',
+        'overflow':             'hidden !important',
+        // CSS multi-column = one column wide/tall per page. epub.js then tracks
+        // horizontal scroll position to know which "page" we're on.
+        '-webkit-column-width': (pageW > 0 ? pageW : 1080) + 'px !important',
+        'column-width':         (pageW > 0 ? pageW : 1080) + 'px !important',
+        '-webkit-column-gap':   '0px !important',
+        'column-gap':           '0px !important',
+        'column-fill':          'auto !important',
+        'height':               (pageH > 0 ? pageH : 1800) + 'px !important',
+      },
+      'body': {
+        'background':             t.bodyBg + ' !important',
+        'color':                  t.text   + ' !important',
+        'font-family':            ff       + ' !important',
+        'font-size':              fs + '% !important',
+        'line-height':            lh       + ' !important',
+        'max-width':              '100% !important',
+        'margin':                 '0 !important',
+        'padding':                '8px ' + mg + ' !important',
+        '-webkit-font-smoothing': 'antialiased !important',
+        'overflow':               'hidden !important',
+        'max-height':             (pageH > 0 ? pageH : 1800) + 'px !important',
+      },
+      'p': {
+        'margin':      '0 0 0.9em 0 !important',
+        'text-align':  'justify !important',
+        'text-indent': '1.4em !important',
+        'orphans':     '2 !important', 'widows': '2 !important'
+      },
+      'p:first-of-type': { 'text-indent': '0 !important' },
+      'h1,h2,h3,h4,h5,h6': {
+        'color':       t.heading + ' !important',
+        'font-weight': '300 !important',
+        'line-height': '1.3 !important',
+        'margin':      '1.2em 0 0.6em 0 !important',
+        'text-indent': '0 !important', 'text-align': 'left !important'
+      },
+      'h1': { 'font-size': '1.5em !important' },
+      'h2': { 'font-size': '1.3em !important' },
+      'h3': { 'font-size': '1.1em !important' },
+      'a':  { 'color': t.link + ' !important', 'text-decoration': 'none !important' },
+      'em,i':       { 'color': t.text    + ' !important' },
+      'strong,b':   { 'color': t.heading + ' !important', 'font-weight': '600 !important' },
+      'blockquote': {
+        'border-left': '2px solid #3A2A1A !important',
+        'margin': '1em 0 !important', 'padding-left': '1.2em !important',
+        'color': '#AAAAAA !important', 'font-style': 'italic !important'
+      },
+      'img': {
+        'max-width': '100% !important', 'height': 'auto !important',
+        'display': 'block !important', 'margin': '1em auto !important'
+      },
+      'table': { 'color': t.text + ' !important' },
+      'hr':    { 'border': 'none !important', 'border-top': '1px solid #2A2A2A !important', 'margin': '1.5em 0 !important' }
+    };
 
-        // Also let epub.js iframe keypresses work
-        function handleKey(e) {
-            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') rendition && rendition.next();
-            if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   rendition && rendition.prev();
-        }
+    rendition.themes.register('bearthen', css);
+    if (reselect) {
+      // Force re-application by briefly switching away
+      rendition.themes.select('default');
+      setTimeout(function() { rendition.themes.select('bearthen'); }, 10);
+    } else {
+      rendition.themes.select('bearthen');
+    }
 
-        // ── Controls visibility ───────────────────────────────────────────────────
-        function toggleBars() {
-            barsVisible = !barsVisible;
-            applyBarVisibility();
-            if (barsVisible) scheduleAutoHide();
-        }
+    applyPageBg();
+    updateSettingsUI();
+  }
 
-        function applyBarVisibility() {
-            var bar = document.getElementById('bottom-bar');
-            if (barsVisible) bar.classList.remove('hidden');
-            else             bar.classList.add('hidden');
-            // Tell QML about bar state (QML back button uses same toggle via title)
-            document.title = barsVisible ? 'BARS:1' : 'BARS:0';
-        }
+  function applyPageBg() {
+    var t = themes[prefs.theme];
+    document.body.style.background = t.bodyBg;
+    document.getElementById('reader').style.background = t.bodyBg;
+    // Update bottom bar for light theme
+    var isLight = prefs.theme === 'light';
+    document.getElementById('bottom-bar').style.background =
+      isLight ? 'rgba(240,240,240,0.97)' : 'rgba(8,8,8,0.97)';
+    document.getElementById('bottom-bar').style.borderTopColor =
+      isLight ? '#DDDDDD' : '#1C1C1C';
+    document.getElementById('pct-label').style.color = isLight ? '#999' : '#555';
+    document.getElementById('progress-fill').style.background =
+      isLight ? '#2C5F2E' : '#8B5A32';
+  }
 
-        function scheduleAutoHide() {
-            if (autoHideTimer) clearTimeout(autoHideTimer);
-            if (!barsVisible) return;
-            autoHideTimer = setTimeout(function() {
-                barsVisible = false;
-                applyBarVisibility();
-            }, 4000);  // auto-hide after 4s of inactivity
-        }
+  // ── Settings UI sync ──────────────────────────────────────────────────────
+  function updateSettingsUI() {
+    // Theme
+    ['dark','sepia','light'].forEach(function(t) {
+      document.getElementById('theme-' + t).classList.toggle('active', prefs.theme === t);
+    });
+    // Font
+    ['georgia','sans','mono'].forEach(function(f) {
+      document.getElementById('font-' + f).classList.toggle('active', prefs.fontFamily === f);
+    });
+    // Spacing
+    ['tight','normal','relaxed'].forEach(function(s) {
+      document.getElementById('spacing-' + s).classList.toggle('active', prefs.spacing === s);
+    });
+    // Margins
+    ['narrow','normal','wide'].forEach(function(m) {
+      document.getElementById('margin-' + m).classList.toggle('active', prefs.margins === m);
+    });
+    // Size display
+    document.getElementById('size-display').textContent = fontSizeSteps[prefs.fontStep || 0][0] + '%';
+  }
 
-        // ── Font size ─────────────────────────────────────────────────────────────
-        document.getElementById('font-down').addEventListener('click', function(e) {
-            e.stopPropagation();
-            fontSize = Math.max(75, fontSize - 10);
-            if (rendition) rendition.themes.override('font-size', fontSize + '%');
-            scheduleAutoHide();
-        });
-        document.getElementById('font-up').addEventListener('click', function(e) {
-            e.stopPropagation();
-            fontSize = Math.min(160, fontSize + 10);
-            if (rendition) rendition.themes.override('font-size', fontSize + '%');
-            scheduleAutoHide();
-        });
+  // ── Global readerSettings API — called by QML via runJavaScript ───────────
+  window.readerSettings = {
 
-        // ── Progress bar ──────────────────────────────────────────────────────────
-        function updateProgress(pct) {
-            currentPct = pct;
-            document.getElementById('progress-fill').style.width = pct + '%';
-            document.getElementById('pct-label').textContent = pct + '%';
-        }
+    openPanel: function() {
+      document.getElementById('settings-overlay').classList.add('open');
+      if (autoHideTimer) clearTimeout(autoHideTimer);
+      updateSettingsUI();
+    },
 
-        var progressTrack = document.getElementById('progress-track');
-        progressTrack.addEventListener('click', function(e) {
-            if (!book || !book.locations || !rendition) return;
-            var rect = this.getBoundingClientRect();
-            var pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            var cfi  = book.locations.cfiFromPercentage(pct);
-            if (cfi) { rendition.display(cfi); scheduleAutoHide(); }
-        });
+    closePanel: function() {
+      var panel   = document.getElementById('settings-panel');
+      var overlay = document.getElementById('settings-overlay');
+      panel.style.transform = 'translateY(100%)';
+      setTimeout(function() {
+        overlay.classList.remove('open');
+        panel.style.transform = '';
+        panel.style.removeProperty('--panel-h');  // reset to default 77vh
+        reportPrefs();
+        scheduleAutoHide();
+      }, 320);
+    },
 
-        // ── Report position to QML ────────────────────────────────────────────────
-        // Uses document.title to pass data — QML watches webView.title.
-        // Safer than window.location.href which can navigate away before QML intercepts.
-        var reportTimer = null;
-        function reportPosition(pct) {
-            if (reportTimer) clearTimeout(reportTimer);
-            reportTimer = setTimeout(function() {
-                document.title = 'PCT:' + Math.round(pct);
-            }, 1500);
-        }
+    togglePanel: function() {
+      var overlay = document.getElementById('settings-overlay');
+      if (overlay.classList.contains('open')) {
+        window.readerSettings.closePanel();
+      } else {
+        window.readerSettings.openPanel();
+      }
+    },
 
-        // ── Error ─────────────────────────────────────────────────────────────────
-        function showError(msg) {
-            document.getElementById('loading').style.display = 'none';
-            var el = document.getElementById('error');
-            el.style.display = 'flex';
-            document.getElementById('err-msg').textContent = msg;
-        }
+    // Toggle the QML nav bar — QML catches 'HIDE_NAV:0/1' in onTitleChanged
+    _navHidden: true,  // nav is hidden by default when reader opens
+    toggleNav: function() {
+      this._navHidden = !this._navHidden;
+      document.title = 'HIDE_NAV:' + (this._navHidden ? '1' : '0');
+      var btn = document.getElementById('hide-nav-btn');
+      if (btn) btn.textContent = this._navHidden ? 'Show Bearthen Menu' : 'Hide Bearthen Menu';
+    },
 
-    })();
+    setTheme: function(t) {
+      if (!themes[t]) return;
+      prefs.theme = t;
+      applyFullTheme(true);
+      reportPrefs();
+    },
+
+    setFontFamily: function(f) {
+      if (!fontValues[f]) return;
+      prefs.fontFamily = f;
+      applyFullTheme(true);
+      reportPrefs();
+    },
+
+    changeFontSize: function(delta) {
+      var step = prefs.fontStep + (delta > 0 ? 1 : -1);
+      step = Math.max(0, Math.min(fontSizeSteps.length - 1, step));
+      prefs.fontStep = step;
+      prefs.fontSize = fontSizeSteps[step][1];
+      document.getElementById('size-display').textContent = fontSizeSteps[step][0] + '%';
+      applyFullTheme(true);
+      reportPrefs();
+    },
+
+    setSpacing: function(s) {
+      if (!spacingValues[s]) return;
+      prefs.spacing = s;
+      applyFullTheme(true);
+      updateSettingsUI();
+      reportPrefs();
+    },
+
+    setMargins: function(m) {
+      if (!marginValues[m]) return;
+      prefs.margins = m;
+      applyFullTheme(true);
+      updateSettingsUI();
+      reportPrefs();
+    }
+  };
+
+  // Close panel when tapping the overlay background
+  document.getElementById('settings-dismiss').addEventListener('click', function() {
+    readerSettings.closePanel();
+  });
+
+  // ── Draggable settings handle ───────────────────────────────────────────
+  (function() {
+    var handle  = document.getElementById('settings-handle');
+    var panel   = document.getElementById('settings-panel');
+    var startY  = 0, startH = 0, dragging = false;
+    var vpH     = window.innerHeight;
+
+    function pxToVh(px) { return px / vpH * 100; }
+
+    handle.addEventListener('touchstart', function(e) {
+      if (!document.getElementById('settings-overlay').classList.contains('open')) return;
+      dragging = true;
+      startY   = e.touches[0].clientY;
+      startH   = panel.offsetHeight;
+      panel.classList.add('dragging');
+      e.preventDefault();
+    }, { passive: false });
+
+    handle.addEventListener('touchmove', function(e) {
+      if (!dragging) return;
+      var dy  = startY - e.touches[0].clientY;  // positive = dragged up
+      var newH = Math.max(vpH * 0.35, Math.min(vpH * 0.90, startH + dy));
+      panel.style.setProperty('--panel-h', pxToVh(newH).toFixed(1) + 'vh');
+      e.preventDefault();
+    }, { passive: false });
+
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      panel.classList.remove('dragging');
+      var curH = panel.offsetHeight;
+      var curVh = pxToVh(curH);
+      if (curVh < 45) {
+        // Dragged most of the way down — close
+        readerSettings.closePanel();
+        panel.style.removeProperty('--panel-h');
+      } else if (curVh > 83) {
+        // Dragged most of the way up — snap to 90vh
+        panel.style.setProperty('--panel-h', '90vh');
+      } else {
+        // Mid-range — snap to nearest of 77vh or 90vh
+        panel.style.setProperty('--panel-h', curVh > 83 ? '90vh' : '77vh');
+      }
+    }
+    handle.addEventListener('touchend',    endDrag);
+    handle.addEventListener('touchcancel', endDrag);
+  })();
+
+  // ── TOC API — called by QML via runJavaScript ────────────────────────────
+  var tocData = [];
+  window.readerToc = {
+    open: function() {
+      var overlay = document.getElementById('toc-overlay');
+      overlay.classList.add('open');
+      if (autoHideTimer) clearTimeout(autoHideTimer);
+    },
+    close: function() {
+      var panel   = document.getElementById('toc-panel');
+      var overlay = document.getElementById('toc-overlay');
+      panel.style.transform = 'translateX(-100%)';
+      setTimeout(function() {
+        overlay.classList.remove('open');
+        panel.style.transform = '';
+      }, 300);
+    },
+    toggle: function() {
+      var overlay = document.getElementById('toc-overlay');
+      if (overlay.classList.contains('open')) window.readerToc.close();
+      else window.readerToc.open();
+    }
+  };
+
+  document.getElementById('toc-dismiss').addEventListener('click', function() {
+    window.readerToc.close();
+  });
+
+  function buildTocList(items, depth) {
+    depth = depth || 0;
+    if (!items || items.length === 0) return;
+    var list = document.getElementById('toc-list');
+    items.forEach(function(item) {
+      var btn = document.createElement('button');
+      btn.className = 'toc-item' + (depth === 1 ? ' toc-item-depth2' : depth >= 2 ? ' toc-item-depth3' : '');
+      btn.textContent = item.label || item.href || '';
+      btn.addEventListener('click', function() {
+        window.readerToc.close();
+        if (rendition) rendition.display(item.href);
+      });
+      list.appendChild(btn);
+      if (item.subitems && item.subitems.length > 0) buildTocList(item.subitems, depth + 1);
+    });
+  }
+
+  // ── Report prefs to QML for persistence ──────────────────────────────────
+  var prefsTimer = null;
+  function reportPrefs() {
+    if (prefsTimer) clearTimeout(prefsTimer);
+    prefsTimer = setTimeout(function() {
+      document.title = 'PREFS:' + JSON.stringify(prefs);
+    }, 300);
+  }
+
+  // ── Touch / swipe ─────────────────────────────────────────────────────────
+  var touchLayer  = document.getElementById('touch-layer');
+  var touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+
+  touchLayer.addEventListener('touchstart', function(e) {
+    touchStartX    = e.touches[0].clientX;
+    touchStartY    = e.touches[0].clientY;
+    touchStartTime = Date.now();
+  }, { passive: true });
+
+  touchLayer.addEventListener('touchend', function(e) {
+    // Don't handle if settings panel is open
+    if (document.getElementById('settings-overlay').classList.contains('open')) return;
+
+    var dx = e.changedTouches[0].clientX - touchStartX;
+    var dy = e.changedTouches[0].clientY - touchStartY;
+    var dt = Date.now() - touchStartTime;
+    var ax = Math.abs(dx), ay = Math.abs(dy);
+
+    // Swipe: fast, horizontal, >40px
+    if (dt < 400 && ax > 40 && ax > ay * 1.5) {
+      if (dx < 0) { if (rendition) rendition.next(); }
+      else         { if (rendition) rendition.prev(); }
+      scheduleAutoHide();
+      return;
+    }
+
+    // Tap zones:
+    //   left 20%  → prev page
+    //   right 20% → next page
+    //   bottom 25% → toggle bars (show/hide controls)
+    //   center    → next page (natural reading direction)
+    if (dt < 300 && ax < 12 && ay < 12) {
+      var w = window.innerWidth;
+      var hh = window.innerHeight;
+      var x = e.changedTouches[0].clientX;
+      var y = e.changedTouches[0].clientY;
+      if      (x < w * 0.20)   { if (rendition) rendition.prev(); }
+      else if (y > hh * 0.75)  { toggleBars(); }
+      else                      { if (rendition) rendition.next(); }
+    }
+  }, { passive: true });
+
+  function handleKey(e) {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') rendition && rendition.next();
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   rendition && rendition.prev();
+  }
+
+  // ── Controls visibility ───────────────────────────────────────────────────
+  function toggleBars() {
+    barsVisible = !barsVisible;
+    var bar = document.getElementById('bottom-bar');
+    if (barsVisible) {
+      bar.classList.remove('hidden');
+      scheduleAutoHide();
+    } else {
+      bar.classList.add('hidden');
+    }
+    document.title = barsVisible ? 'BARS:1' : 'BARS:0';
+  }
+
+  function scheduleAutoHide() {
+    if (autoHideTimer) clearTimeout(autoHideTimer);
+    if (!barsVisible) return;
+    autoHideTimer = setTimeout(function() {
+      barsVisible = false;
+      document.getElementById('bottom-bar').classList.add('hidden');
+      document.title = 'BARS:0';  // QML hides gear+TOC buttons
+    }, 3500);
+  }
+
+  // ── Progress ──────────────────────────────────────────────────────────────
+  function updateProgress(pct) {
+    currentPct = pct;
+    document.getElementById('progress-fill').style.width = pct + '%';
+    document.getElementById('pct-label').textContent     = pct + '%';
+  }
+
+  document.getElementById('progress-track').addEventListener('click', function(e) {
+    if (!book || !book.locations || !rendition) return;
+    var rect = this.getBoundingClientRect();
+    var pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    var cfi  = book.locations.cfiFromPercentage(pct);
+    if (cfi) { rendition.display(cfi); scheduleAutoHide(); }
+  });
+
+  // ── Report position to QML via title ──────────────────────────────────────
+  var reportTimer = null;
+  function reportPosition(pct) {
+    if (reportTimer) clearTimeout(reportTimer);
+    reportTimer = setTimeout(function() {
+      document.title = 'PCT:' + Math.round(pct);
+    }, 1500);
+  }
+
+  function showError(msg) {
+    document.getElementById('loading').style.display = 'none';
+    var el = document.getElementById('error');
+    el.style.display = 'flex';
+    document.getElementById('err-msg').textContent = msg;
+  }
+
+})();
 </script>
 </body>
 </html>

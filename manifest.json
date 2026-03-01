@@ -9,7 +9,8 @@
     "hooks": {
         "bearthen": {
             "apparmor": "bearthen.apparmor",
-            "desktop": "bearthen.desktop"
+            "desktop": "bearthen.desktop",
+            "content-hub": "bearthen-contenthub.json"
         }
     }
 }

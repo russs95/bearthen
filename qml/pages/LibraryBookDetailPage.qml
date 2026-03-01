@@ -16,10 +16,42 @@ Page {
     property string dbgFilePath:    ""
     property string dbgCoverSource: "none"
 
-    // Earthen palette — original warm browns
-    readonly property color earthBrown:      "#6B3A20"
-    readonly property color earthBrownLight: "#8B5228"
-    readonly property color earthBrownMid:   "#6B3A20"
+    // ════════════════════════════════════════════════════════════════════════════
+    // COLOUR PALETTE — tweak here, effects ripple through the whole page
+    // ════════════════════════════════════════════════════════════════════════════
+
+    // ── Browns (earthen / bark palette) ──────────────────────────────────────
+    // Primary brown — used for: header "Your Books", Remove button, debug labels
+    readonly property color clrBrown:       root.isDarkMode ? "#A07040" : "#6B3A20"
+    // Lighter brown — available for hover states, accents
+    readonly property color clrBrownLight:  root.isDarkMode ? "#C09060" : "#8B5228"
+
+    // ── Greens (forest palette) ───────────────────────────────────────────────
+    // Dark green — used for: Start Reading button bg, progress bar fill, divider
+    readonly property color clrGreenDark:   "#2C5F2E"
+    // Bright green — used for: badge text, Public Domain bar, link accents
+    readonly property color clrGreenBright: "#4CAF50"
+
+    // ── Surfaces ──────────────────────────────────────────────────────────────
+    // Hero section background
+    readonly property color clrHeroBg:      root.isDarkMode ? "#1A0D06" : "#F5EAD0"
+    // Page background
+    readonly property color clrPageBg:      root.isDarkMode ? "#121212" : "#FFFFFF"
+    // Header bar background
+    readonly property color clrHeaderBg:    root.isDarkMode ? "#1A1A1A" : "#F5F5F5"
+
+    // ── Text ──────────────────────────────────────────────────────────────────
+    // Primary body text
+    readonly property color clrTextPrimary: root.isDarkMode ? "#FFFFFF" : "#212121"
+    // Secondary / subtitle text
+    readonly property color clrTextMuted:   root.isDarkMode ? "#AAAAAA" : "#666666"
+    // Debug panel labels
+    readonly property color clrTextDebug:   libBookPage.clrTextDebug
+
+    // ── Legacy aliases (keep so nothing breaks mid-refactor) ──────────────────
+    readonly property color earthBrown:      clrBrown
+    readonly property color earthBrownLight: clrBrownLight
+    readonly property color earthBrownMid:   clrBrown
 
     // Guard against re-entrant calls: book = fresh triggers onBookChanged
     // which would call _initBook again → infinite recursion → stack overflow.
@@ -59,11 +91,11 @@ Page {
                 text: "Your Books"
                 fontSize: "large"
                 font.weight: Font.Light
-                color: root.isDarkMode ? "#A0673A" : "#6B3A20"
+                color: libBookPage.clrBrown
             }
         }
         StyleHints {
-            backgroundColor: root.isDarkMode ? "#1A1A1A" : "#F5F5F5"
+            backgroundColor: libBookPage.clrHeaderBg
             dividerColor: "#2C5F2E"
         }
         leadingActionBar.actions: [
@@ -73,7 +105,7 @@ Page {
 
     Rectangle {
         anchors.fill: parent
-        color: root.isDarkMode ? "#121212" : "#FFFFFF"
+        color: libBookPage.clrPageBg
         Behavior on color { ColorAnimation { duration: 250 } }
     }
 
@@ -92,7 +124,7 @@ Page {
             Rectangle {
                 width: parent.width
                 height: heroRow.height + units.gu(4)
-                color: root.isDarkMode ? "#1A0D06" : "#F5EAD0"
+                color: libBookPage.clrHeroBg
                 Behavior on color { ColorAnimation { duration: 250 } }
 
                 Row {
@@ -320,13 +352,13 @@ Page {
                     anchors { left: parent.left; right: parent.right
                               leftMargin: units.gu(2); rightMargin: units.gu(2) }
                     height: units.gu(5.5); radius: units.dp(8)
-                    color: root.isDarkMode ? "#0D0D0D" : "#2C5F2E"
+                    color: libBookPage.clrGreenDark   // always green — text goes dark in dark mode
                     Row {
                         anchors.centerIn: parent; spacing: units.gu(0.8)
                         Icon {
                             width: units.gu(2.2); height: units.gu(2.2)
                             name: "media-playback-start"
-                            color: root.isDarkMode ? "#0D0D0D" : "#FFFFFF"
+                            color: root.isDarkMode ? "#0A0A0A" : "#FFFFFF"
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         Label {
@@ -334,7 +366,7 @@ Page {
                                   ? (libBookPage.book.read_percent > 0
                                      ? "Continue Reading" : "Start Reading") : "Read"
                             fontSize: "medium"; font.weight: Font.Medium
-                            color: root.isDarkMode ? "#0D0D0D" : "#FFFFFF"
+                            color: root.isDarkMode ? "#0A0A0A" : "#FFFFFF"
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -420,27 +452,27 @@ Page {
                               top: parent.top; topMargin: units.gu(1) }
                     spacing: units.gu(0.4)
                     Label { width: parent.width; text: "— debug info —"
-                            fontSize: "x-small"; color: "#777777"
+                            fontSize: "x-small"; color: libBookPage.clrTextDebug
                             horizontalAlignment: Text.AlignHCenter }
                     Label { width: parent.width
                             text: "cover source: " + libBookPage.dbgCoverSource
-                            fontSize: "x-small"; color: "#777777"
+                            fontSize: "x-small"; color: libBookPage.clrTextDebug
                             wrapMode: Text.WrapAnywhere }
                     Label { width: parent.width
                             text: "cover_url: " + libBookPage.dbgCoverUrl
-                            fontSize: "x-small"; color: "#777777"; wrapMode: Text.WrapAnywhere }
+                            fontSize: "x-small"; color: libBookPage.clrTextDebug; wrapMode: Text.WrapAnywhere }
                     Label { width: parent.width
                             text: "epub_url: " + libBookPage.dbgEpubUrl
-                            fontSize: "x-small"; color: "#777777"
+                            fontSize: "x-small"; color: libBookPage.clrTextDebug
                             wrapMode: Text.WrapAnywhere }
                     Label { width: parent.width
                             text: "file_path: " + libBookPage.dbgFilePath
-                            fontSize: "x-small"; color: "#777777"
+                            fontSize: "x-small"; color: libBookPage.clrTextDebug
                             wrapMode: Text.WrapAnywhere }
                     Label { width: parent.width
                             text: "img: " + ["Null","Ready","Loading","Error"][coverImg.status]
                                   + " (status " + coverImg.status + ")"
-                            fontSize: "x-small"; color: "#777777" }
+                            fontSize: "x-small"; color: libBookPage.clrTextDebug }
                 }
             }
 
