@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>meta-probe</title></head>
+<body>
+<!-- Silent page — no visible UI. Loads epub.js, reads OPF metadata +
+     cover image, then reports everything back to QML via document.title.
+     QML catches "META:{json}" in the WebView's onTitleChanged handler.  -->
+<script src="./jszip.min.js"></script>
+<script src="./epub.min.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  function getParam(name) {
+    var idx = location.href.indexOf('?');
+    if (idx === -1) return '';
+    var pairs = location.href.substring(idx + 1).split('&');
+    for (var i = 0; i < pairs.length; i++) {
+      var kv = pairs[i].split('=');
+      if (decodeURIComponent(kv[0]) === name)
+        return decodeURIComponent((kv[1] || '').replace(/\+/g, '%20'));
+    }
+    return '';
+  }
+
+  function report(obj) {
+    document.title = 'META:' + JSON.stringify(obj);
+  }
+
+  var epubUrl = getParam('url');
+  if (!epubUrl) { report({ error: 'no url' }); return; }
+
+  window.addEventListener('load', function() {
+    if (typeof ePub === 'undefined') { report({ error: 'epub.js missing' }); return; }
+
+    var book;
+    try { book = ePub(epubUrl); }
+    catch(e) { report({ error: 'open: ' + e.message }); return; }
+
+    var done = false;
+    var guard = setTimeout(function() {
+      if (!done) { done = true; report({ error: 'timeout' }); }
+    }, 20000);
+
+    book.ready.then(function() {
+      if (done) return;
+
+      var m = (book.packaging && book.packaging.metadata) ? book.packaging.metadata : {};
+
+      function clean(s) {
+        return (s || '').trim()
+          .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+          .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+      }
+
+      var result = {
+        title:    clean(m.title),
+        author:   clean(m.creator),
+        language: (m.language || 'en').substring(0, 5).trim(),
+        cover:    ''
+      };
+
+      // Extract cover thumbnail as JPEG data: URI
+      book.coverUrl().then(function(blobUrl) {
+        if (!blobUrl) { finish(result); return; }
+        var img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = function() {
+          try {
+            var MAX_W = 200, MAX_H = 300;
+            var r  = Math.min(MAX_W / (img.naturalWidth||1), MAX_H / (img.naturalHeight||1), 1);
+            var cw = Math.max(1, Math.round(img.naturalWidth  * r));
+            var ch = Math.max(1, Math.round(img.naturalHeight * r));
+            var cv = document.createElement('canvas');
+            cv.width = cw; cv.height = ch;
+            cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+            result.cover = cv.toDataURL('image/jpeg', 0.80);
+          } catch(e) { console.log('cover err:', e); }
+          finish(result);
+        };
+        img.onerror = function() { finish(result); };
+        img.src = blobUrl;
+      }).catch(function() { finish(result); });
+
+    }).catch(function(e) {
+      if (done) return;
+      done = true; clearTimeout(guard);
+      report({ error: String(e).replace(/"/g,"'") });
+    });
+
+    function finish(r) {
+      if (done) return;
+      done = true; clearTimeout(guard);
+      report(r);
+    }
+  });
+})();
+</script>
+</body>
+</html>

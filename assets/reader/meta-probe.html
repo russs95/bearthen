@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>meta-probe</title></head>
+<body>
+<!--
+  Silent EPUB metadata + cover extractor.
+  Sends TWO separate signals to QML via document.title:
+
+    1. "META:{title,author,language}"  — small JSON, sent first
+    2. "COVER_CHUNK:N/T:<base64slice>" — cover in ~8KB chunks
+       N = chunk index (0-based), T = total chunks
+
+  QML catches these in metaProbeView.onTitleChanged and reassembles.
+  Chunking avoids Qt WebView's document.title length limit (~32 KB).
+-->
+<script src="./jszip.min.js"></script>
+<script src="./epub.min.js"></script>
+<script>
+    (function() {
+        'use strict';
+
+        var CHUNK = 6000;   // chars per title signal — safe under Qt limit
+
+        function getParam(name) {
+            var idx = location.href.indexOf('?');
+            if (idx < 0) return '';
+            var pairs = location.href.substring(idx + 1).split('&');
+            for (var i = 0; i < pairs.length; i++) {
+                var kv = pairs[i].split('=');
+                if (decodeURIComponent(kv[0]) === name)
+                    return decodeURIComponent((kv[1] || '').replace(/\+/g, '%20'));
+            }
+            return '';
+        }
+
+        function clean(s) {
+            return (s || '').trim()
+                .replace(/&amp;/g,'&').replace(/&lt;/g,'<')
+                .replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+        }
+
+        function sendTitle(val) {
+            return new Promise(function(resolve) {
+                document.title = val;
+                // Tiny delay lets QML's onTitleChanged fire before we clobber it
+                setTimeout(resolve, 80);
+            });
+        }
+
+        function sendChunks(dataUrl) {
+            // Split base64 data into chunks and send sequentially
+            var data   = dataUrl;          // full "data:image/jpeg;base64,..."
+            var total  = Math.ceil(data.length / CHUNK);
+            var idx    = 0;
+
+            function next() {
+                if (idx >= total) return;
+                var slice = data.substring(idx * CHUNK, (idx + 1) * CHUNK);
+                var msg   = 'COVER_CHUNK:' + idx + '/' + total + ':' + slice;
+                sendTitle(msg).then(function() {
+                    idx++;
+                    next();
+                });
+            }
+            next();
+        }
+
+        var epubUrl = getParam('url');
+        if (!epubUrl) {
+            document.title = 'META:{"error":"no url"}';
+            return;
+        }
+
+        window.addEventListener('load', function() {
+            if (typeof ePub === 'undefined') {
+                document.title = 'META:{"error":"epub.js missing"}';
+                return;
+            }
+
+            var book;
+            try { book = ePub(epubUrl); }
+            catch(e) {
+                document.title = 'META:{"error":"' + e.message.replace(/"/g,"'") + '"}';
+                return;
+            }
+
+            var done = false;
+            var guard = setTimeout(function() {
+                if (!done) { done = true; document.title = 'META:{"error":"timeout"}'; }
+            }, 25000);
+
+            book.ready.then(function() {
+                if (done) return;
+
+                var m = (book.packaging && book.packaging.metadata) || {};
+                var meta = {
+                    title:    clean(m.title),
+                    author:   clean(m.creator),
+                    language: (m.language || 'en').substring(0, 5).trim()
+                };
+
+                // Step 1: send small META signal immediately
+                sendTitle('META:' + JSON.stringify(meta)).then(function() {
+                    // Step 2: extract cover, then send in chunks
+                    book.coverUrl().then(function(blobUrl) {
+                        if (!blobUrl) { finish(); return; }
+
+                        var img = new Image();
+                        img.crossOrigin = 'anonymous';
+                        img.onload = function() {
+                            try {
+                                var MAX = 180;
+                                var r   = Math.min(MAX / (img.naturalWidth||1), MAX * 1.5 / (img.naturalHeight||1), 1);
+                                var cw  = Math.max(1, Math.round(img.naturalWidth  * r));
+                                var ch  = Math.max(1, Math.round(img.naturalHeight * r));
+                                var cv  = document.createElement('canvas');
+                                cv.width = cw; cv.height = ch;
+                                cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+                                var dataUrl = cv.toDataURL('image/jpeg', 0.72);
+                                sendChunks(dataUrl);
+                            } catch(e) { console.log('cover err:', e); }
+                            finish();
+                        };
+                        img.onerror = function() { finish(); };
+                        img.src = blobUrl;
+                    }).catch(function() { finish(); });
+                });
+
+            }).catch(function(e) {
+                if (done) return;
+                done = true; clearTimeout(guard);
+                document.title = 'META:{"error":"' + String(e).replace(/"/g,"'") + '"}';
+            });
+
+            function finish() {
+                if (done) return;
+                done = true;
+                clearTimeout(guard);
+            }
+        });
+    })();
+</script>
+</body>
+</html>

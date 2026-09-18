@@ -4,12 +4,10 @@ import Ubuntu.Components 1.3
 Page {
     id: settingsPage
 
-    // ── Header ────────────────────────────────────────────────────────────────
     header: PageHeader {
         id: pageHeader
         title: "Bearthen"
-        subtitle: "Settings"
-
+        subtitle: root.t("Settings")
         StyleHints {
             foregroundColor: "#4CAF50"
             backgroundColor: root.isDarkMode ? "#1A1A1A" : "#F5F5F5"
@@ -17,19 +15,13 @@ Page {
         }
     }
 
-    // ── Background — responds to theme ────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
         color: root.isDarkMode ? "#121212" : "#FFFFFF"
-
-        Behavior on color {
-            ColorAnimation { duration: 250 }
-        }
+        Behavior on color { ColorAnimation { duration: 250 } }
     }
 
-    // ── Scrollable content ────────────────────────────────────────────────────
     Flickable {
-        id: scrollArea
         anchors {
             top: pageHeader.bottom
             left: parent.left
@@ -43,195 +35,277 @@ Page {
             id: settingsColumn
             width: parent.width
 
-            // ════════════════════════════════════════════════════════════════
-            // SECTION: Appearance
-            // ════════════════════════════════════════════════════════════════
-            SettingsSectionHeader {
-                label: "Appearance"
-            }
+            // ── Mission banner ─────────────────────────────────────────────────
+            Rectangle {
+                width: parent.width
+                height: missionColumn.height + units.gu(4)
+                color: root.isDarkMode ? "#0D1F0D" : "#E8F5E9"
+                Behavior on color { ColorAnimation { duration: 250 } }
 
-            // Dark / Light mode toggle
-            SettingsRow {
-                iconName: root.isDarkMode ? "night-mode" : "display-brightness-symbolic"
-                label: "Dark Mode"
-                description: root.isDarkMode ? "Dark theme active" : "Light theme active"
+                Column {
+                    id: missionColumn
+                    anchors {
+                        top: parent.top
+                        left: parent.left
+                        right: parent.right
+                        topMargin: units.gu(2.5)
+                        leftMargin: units.gu(2.5)
+                        rightMargin: units.gu(2.5)
+                    }
+                    spacing: units.gu(1.5)
 
-                Switch {
-                    id: darkModeSwitch
-                    anchors.verticalCenter: parent.verticalCenter
-                    checked: root.isDarkMode
-                    onCheckedChanged: {
-                        root.isDarkMode = checked
-                        root.theme.name = checked
-                            ? "Ubuntu.Components.Themes.SuruDark"
-                            : "Ubuntu.Components.Themes.Ambiance"
+                    // Two icons side by side — settings gear + human figure
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: units.gu(2)
+
+                        Icon {
+                            width: units.gu(5.5)
+                            height: units.gu(5.5)
+                            name: "settings"
+                            color: "#2C5F2E"
+                        }
+
+                        Icon {
+                            width: units.gu(5.5)
+                            height: units.gu(5.5)
+                            name: "preferences-desktop-accessibility-symbolic"
+                            color: "#2C5F2E"
+                        }
+                    }
+
+                    Label {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: parent.width
+                        text: root.t("Mission")
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        fontSize: "small"
+                        color: root.isDarkMode ? "#AAAAAA" : "#555555"
+                        lineHeight: 1.5
+                        Behavior on color { ColorAnimation { duration: 250 } }
                     }
                 }
             }
 
-            // Font size
-            SettingsRow {
-                iconName: "font-size-plus"
-                label: "Reading Font Size"
-                description: "Adjust text size while reading"
-                showChevron: true
-                onTapped: fontHint.visible = true
+            // ── APPEARANCE ────────────────────────────────────────────────────
+            SectionHeader { label: root.t("Appearance") }
+
+            ToggleRow {
+                iconName: "display-brightness-symbolic"
+                labelText: root.t("Dark Mode")
+                subText: root.isDarkMode
+                    ? root.t("Dark theme active")
+                    : root.t("Light theme active")
+                isChecked: root.isDarkMode
+                onToggled: root.isDarkMode = val
             }
 
-            // Reading theme
-            SettingsRow {
-                iconName: "visual-memory-indicator"
-                label: "Reading Theme"
-                description: "Paper, Sepia, Night"
-                showChevron: true
-                onTapped: themeHint.visible = true
+            // ── LANGUAGE ──────────────────────────────────────────────────────
+            SectionHeader { label: root.t("Language") }
+
+            Repeater {
+                model: root.availableLanguages
+
+                ListItem {
+                    height: units.gu(7)
+                    color: root.isDarkMode ? "#121212" : "#FFFFFF"
+                    Behavior on color { ColorAnimation { duration: 250 } }
+                    divider.colorFrom: root.isDarkMode ? "#2A2A2A" : "#E0E0E0"
+                    divider.colorTo: root.isDarkMode ? "#121212" : "#FFFFFF"
+
+                    Item {
+                        anchors {
+                            fill: parent
+                            leftMargin: units.gu(2)
+                            rightMargin: units.gu(2)
+                        }
+
+                        Rectangle {
+                            id: dot
+                            width: units.gu(1.2)
+                            height: units.gu(1.2)
+                            radius: width / 2
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: root.currentLanguage === modelData.code
+                                ? "#4CAF50" : "transparent"
+                            border.color: root.currentLanguage === modelData.code
+                                ? "#4CAF50" : "#666666"
+                            border.width: units.dp(1.5)
+                        }
+
+                        Column {
+                            anchors {
+                                left: dot.right
+                                leftMargin: units.gu(1.5)
+                                right: langTick.left
+                                rightMargin: units.gu(1)
+                                verticalCenter: parent.verticalCenter
+                            }
+                            spacing: units.gu(0.2)
+
+                            Label {
+                                text: modelData.nativeName
+                                fontSize: "medium"
+                                font.weight: root.currentLanguage === modelData.code
+                                    ? Font.Medium : Font.Normal
+                                color: root.currentLanguage === modelData.code
+                                    ? "#4CAF50"
+                                    : (root.isDarkMode ? "#FFFFFF" : "#212121")
+                                Behavior on color { ColorAnimation { duration: 200 } }
+                            }
+
+                            Label {
+                                text: modelData.englishName
+                                fontSize: "x-small"
+                                color: "#888888"
+                                visible: modelData.nativeName !== modelData.englishName
+                            }
+                        }
+
+                        Icon {
+                            id: langTick
+                            anchors {
+                                right: parent.right
+                                verticalCenter: parent.verticalCenter
+                            }
+                            width: units.gu(2.2)
+                            height: units.gu(2.2)
+                            name: "tick"
+                            color: "#4CAF50"
+                            visible: root.currentLanguage === modelData.code
+                        }
+                    }
+
+                    onClicked: root.currentLanguage = modelData.code
+                }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // SECTION: Reading
-            // ════════════════════════════════════════════════════════════════
-            SettingsSectionHeader {
-                label: "Reading"
-            }
+            // ── READING ───────────────────────────────────────────────────────
+            SectionHeader { label: root.t("Reading") }
 
-            SettingsRow {
-                iconName: "media-skip-forward"
-                label: "Page Turn Style"
-                description: "Scroll or paginate"
-                showChevron: true
-                onTapped: pageHint.visible = true
-            }
-
-            SettingsRow {
+            ToggleRow {
                 iconName: "bookmark"
-                label: "Auto-Bookmark"
-                description: "Save position when closing a book"
-
-                Switch {
-                    anchors.verticalCenter: parent.verticalCenter
-                    checked: true
-                }
+                labelText: root.t("Auto-Bookmark")
+                subText: root.t("Save position when closing a book")
+                isChecked: true
+                onToggled: console.log("Auto-bookmark:", val)
             }
 
-            SettingsRow {
+            ToggleRow {
                 iconName: "torch-on"
-                label: "Keep Screen Awake"
-                description: "Prevent sleep while reading"
-
-                Switch {
-                    anchors.verticalCenter: parent.verticalCenter
-                    checked: false
-                }
+                labelText: root.t("Keep Screen Awake")
+                subText: root.t("Prevent sleep while reading")
+                isChecked: false
+                onToggled: console.log("Keep awake:", val)
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // SECTION: AI Connector
-            // ════════════════════════════════════════════════════════════════
-            SettingsSectionHeader {
-                label: "AI Connector"
-            }
+            // ── AI CONNECTOR ──────────────────────────────────────────────────
+            SectionHeader { label: root.t("AI Connector") }
 
-            SettingsRow {
+            ChevronRow {
                 iconName: "edit"
-                label: "AI Endpoint URL"
-                description: "e.g. http://localhost:11434 for Ollama"
-                showChevron: true
-                onTapped: aiHint.visible = true
+                labelText: root.t("AI Endpoint URL")
+                subText: "e.g. http://localhost:11434"
             }
 
-            SettingsRow {
-                iconName: "lock"
-                label: "API Key"
-                description: "Optional — leave blank for local models"
-                showChevron: true
-                onTapped: aiHint.visible = true
+            ToggleRow {
+                iconName: "search"
+                labelText: root.t("AI Features")
+                subText: root.t("Translate, summarise, define")
+                isChecked: false
+                onToggled: console.log("AI features:", val)
             }
 
-            SettingsRow {
-                iconName: "system-devices-panel-symbolic"
-                label: "AI Features"
-                description: "Translate, summarise, define"
+            // ── ABOUT ─────────────────────────────────────────────────────────
+            SectionHeader { label: root.t("About") }
 
-                Switch {
-                    anchors.verticalCenter: parent.verticalCenter
-                    checked: false
+            ChevronRow {
+                iconName: "stock_ebook"
+                labelText: "Bearthen"
+                subText: "v0.1.1 — EarthReader Beta Shell"
+            }
+
+            // Open Source row — tapping opens GitHub README in system browser
+            ListItem {
+                height: units.gu(8)
+                color: root.isDarkMode ? "#121212" : "#FFFFFF"
+                Behavior on color { ColorAnimation { duration: 250 } }
+                divider.colorFrom: root.isDarkMode ? "#2A2A2A" : "#E0E0E0"
+                divider.colorTo: root.isDarkMode ? "#121212" : "#FFFFFF"
+
+                onClicked: Qt.openUrlExternally(
+                    "https://github.com/russs95/bearthen/blob/main/README.md"
+                )
+
+                Item {
+                    anchors {
+                        fill: parent
+                        leftMargin: units.gu(2)
+                        rightMargin: units.gu(2)
+                    }
+
+                    Icon {
+                        id: osIcon
+                        width: units.gu(2.8)
+                        height: units.gu(2.8)
+                        name: "stock_website"
+                        color: "#4CAF50"
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Column {
+                        anchors {
+                            left: osIcon.right
+                            leftMargin: units.gu(1.5)
+                            right: osChevron.left
+                            rightMargin: units.gu(1)
+                            verticalCenter: parent.verticalCenter
+                        }
+                        spacing: units.gu(0.3)
+
+                        Label {
+                            text: root.t("Open Source")
+                            fontSize: "medium"
+                            color: root.isDarkMode ? "#FFFFFF" : "#212121"
+                            Behavior on color { ColorAnimation { duration: 250 } }
+                        }
+
+                        Label {
+                            text: "github.com/russs95/bearthen"
+                            fontSize: "x-small"
+                            color: "#4CAF50"
+                            width: parent.width
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    Icon {
+                        id: osChevron
+                        anchors {
+                            right: parent.right
+                            verticalCenter: parent.verticalCenter
+                        }
+                        width: units.gu(2)
+                        height: units.gu(2)
+                        name: "go-next"
+                        color: "#555555"
+                    }
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // SECTION: Storage
-            // ════════════════════════════════════════════════════════════════
-            SettingsSectionHeader {
-                label: "Storage"
-            }
-
-            SettingsRow {
-                iconName: "save"
-                label: "Books Location"
-                description: "~/Books/Bearthen"
-                showChevron: true
-                onTapped: storageHint.visible = true
-            }
-
-            SettingsRow {
-                iconName: "delete"
-                label: "Clear Cache"
-                description: "Remove temporary cover art and data"
-                showChevron: true
-                onTapped: storageHint.visible = true
-            }
-
-            // ════════════════════════════════════════════════════════════════
-            // SECTION: About
-            // ════════════════════════════════════════════════════════════════
-            SettingsSectionHeader {
-                label: "About"
-            }
-
-            SettingsRow {
-                iconName: "info"
-                label: "Bearthen"
-                description: "Version 0.1.0 — Beta Shell"
-            }
-
-            SettingsRow {
-                iconName: "stock_website"
-                label: "EarthReader Project"
-                description: "reader.earthen.io"
-                showChevron: true
-                onTapped: console.log("Open reader.earthen.io")
-            }
-
-            SettingsRow {
-                iconName: "contacts-app-symbolic"
-                label: "Buwana Identity"
-                description: "buwana.earthen.io"
-                showChevron: true
-                onTapped: console.log("Open buwana.earthen.io")
-            }
-
-            SettingsRow {
-                iconName: "like"
-                label: "Open Source"
-                description: "github.com/russs95/bearthen"
-                showChevron: true
-                onTapped: console.log("Open GitHub repo")
-            }
-
-            // Bottom breathing room
             Item { width: parent.width; height: units.gu(3) }
         }
     }
 
-    // ── Inline sub-components ─────────────────────────────────────────────────
-
-    // Section header label
-    component SettingsSectionHeader: Rectangle {
+    // ── Section header ────────────────────────────────────────────────────────
+    component SectionHeader: Rectangle {
         property string label: ""
         width: settingsColumn.width
-        height: units.gu(5)
-        color: root.isDarkMode ? "#1A1A1A" : "#EEEEEE"
-
+        height: units.gu(4.5)
+        color: root.isDarkMode ? "#1E1E1E" : "#EEEEEE"
         Behavior on color { ColorAnimation { duration: 250 } }
 
         Label {
@@ -244,175 +318,143 @@ Page {
             fontSize: "x-small"
             color: "#4CAF50"
             font.weight: Font.Medium
-            letterSpacing: 1.2
         }
     }
 
-    // Settings row — icon, label, description, optional right-side slot
-    component SettingsRow: ListItem {
-        id: rowItem
+    // ── Toggle row ────────────────────────────────────────────────────────────
+    component ToggleRow: ListItem {
         property string iconName: ""
-        property string label: ""
-        property string description: ""
-        property bool showChevron: false
-        signal tapped()
+        property string labelText: ""
+        property string subText: ""
+        property bool isChecked: false
+        signal toggled(bool val)
 
-        width: settingsColumn.width
         height: units.gu(8)
         color: root.isDarkMode ? "#121212" : "#FFFFFF"
         divider.colorFrom: root.isDarkMode ? "#2A2A2A" : "#E0E0E0"
-        divider.colorTo:   root.isDarkMode ? "#121212" : "#FFFFFF"
-
+        divider.colorTo: root.isDarkMode ? "#121212" : "#FFFFFF"
         Behavior on color { ColorAnimation { duration: 250 } }
 
-        onClicked: rowItem.tapped()
-
-        Row {
+        Item {
             anchors {
                 fill: parent
-                leftMargin:  units.gu(2)
+                leftMargin: units.gu(2)
                 rightMargin: units.gu(2)
             }
-            spacing: units.gu(1.5)
 
-            // Row icon
             Icon {
+                id: tIcon
                 width: units.gu(2.8)
                 height: units.gu(2.8)
                 name: iconName
                 color: "#4CAF50"
+                anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
             }
 
-            // Label + description
             Column {
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width
-                       - units.gu(2.8)           // icon
-                       - units.gu(1.5)           // left spacing
-                       - (showChevron ? units.gu(3) : units.gu(1))
+                anchors {
+                    left: tIcon.right
+                    leftMargin: units.gu(1.5)
+                    right: tSwitch.left
+                    rightMargin: units.gu(1)
+                    verticalCenter: parent.verticalCenter
+                }
                 spacing: units.gu(0.3)
 
                 Label {
-                    text: rowItem.label
+                    text: labelText
                     fontSize: "medium"
                     color: root.isDarkMode ? "#FFFFFF" : "#212121"
-                    font.weight: Font.Normal
                     Behavior on color { ColorAnimation { duration: 250 } }
                 }
 
                 Label {
-                    text: rowItem.description
+                    text: subText
                     fontSize: "x-small"
-                    color: root.isDarkMode ? "#888888" : "#757575"
-                    wrapMode: Text.WordWrap
+                    color: "#888888"
                     width: parent.width
-                    Behavior on color { ColorAnimation { duration: 250 } }
+                    wrapMode: Text.WordWrap
                 }
             }
 
-            // Chevron
+            Switch {
+                id: tSwitch
+                anchors {
+                    right: parent.right
+                    verticalCenter: parent.verticalCenter
+                }
+                checked: isChecked
+                onCheckedChanged: toggled(checked)
+            }
+        }
+    }
+
+    // ── Chevron row ───────────────────────────────────────────────────────────
+    component ChevronRow: ListItem {
+        property string iconName: ""
+        property string labelText: ""
+        property string subText: ""
+
+        height: units.gu(8)
+        color: root.isDarkMode ? "#121212" : "#FFFFFF"
+        divider.colorFrom: root.isDarkMode ? "#2A2A2A" : "#E0E0E0"
+        divider.colorTo: root.isDarkMode ? "#121212" : "#FFFFFF"
+        Behavior on color { ColorAnimation { duration: 250 } }
+
+        Item {
+            anchors {
+                fill: parent
+                leftMargin: units.gu(2)
+                rightMargin: units.gu(2)
+            }
+
             Icon {
-                visible: showChevron
+                id: cIcon
+                width: units.gu(2.8)
+                height: units.gu(2.8)
+                name: iconName
+                color: "#4CAF50"
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Column {
+                anchors {
+                    left: cIcon.right
+                    leftMargin: units.gu(1.5)
+                    right: cChevron.left
+                    rightMargin: units.gu(1)
+                    verticalCenter: parent.verticalCenter
+                }
+                spacing: units.gu(0.3)
+
+                Label {
+                    text: labelText
+                    fontSize: "medium"
+                    color: root.isDarkMode ? "#FFFFFF" : "#212121"
+                    Behavior on color { ColorAnimation { duration: 250 } }
+                }
+
+                Label {
+                    text: subText
+                    fontSize: "x-small"
+                    color: "#888888"
+                    width: parent.width
+                    elide: Text.ElideRight
+                }
+            }
+
+            Icon {
+                id: cChevron
+                anchors {
+                    right: parent.right
+                    verticalCenter: parent.verticalCenter
+                }
                 width: units.gu(2)
                 height: units.gu(2)
                 name: "go-next"
-                color: root.isDarkMode ? "#555555" : "#BBBBBB"
-                anchors.verticalCenter: parent.verticalCenter
-            }
-        }
-    }
-
-    // ── Placeholder hint dialogs ──────────────────────────────────────────────
-    HintDialog {
-        id: fontHint
-        title: "Reading Font Size"
-        message: "A font size slider will appear in the reader toolbar when a book is open. Pinch-to-zoom will also be supported."
-    }
-
-    HintDialog {
-        id: themeHint
-        title: "Reading Theme"
-        message: "Choose between Paper (white), Sepia (warm), and Night (true black) reading themes. Coming in the next release."
-    }
-
-    HintDialog {
-        id: pageHint
-        title: "Page Turn Style"
-        message: "Switch between smooth scrolling and paginated (swipe left/right) reading modes. Readium Web supports both natively."
-    }
-
-    HintDialog {
-        id: aiHint
-        title: "AI Connector"
-        message: "Point Bearthen at any OpenAI-compatible endpoint — Ollama running locally, a cloud API, or your own agent. Your reading data never leaves your device without your configuration."
-    }
-
-    HintDialog {
-        id: storageHint
-        title: "Storage"
-        message: "Book storage management and cache clearing are coming in the next release. Books currently save to your app's confined data directory."
-    }
-
-    // Reusable hint dialog component
-    component HintDialog: Rectangle {
-        id: hintRoot
-        property string title: ""
-        property string message: ""
-
-        anchors.fill: parent
-        color: "#CC000000"
-        visible: false
-        z: 10
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: hintRoot.visible = false
-        }
-
-        Rectangle {
-            anchors.centerIn: parent
-            width: units.gu(36)
-            height: dialogColumn.height + units.gu(4)
-            radius: units.gu(1)
-            color: root.isDarkMode ? "#1E1E1E" : "#FFFFFF"
-
-            Behavior on color { ColorAnimation { duration: 250 } }
-
-            Column {
-                id: dialogColumn
-                anchors {
-                    top: parent.top
-                    left: parent.left
-                    right: parent.right
-                    margins: units.gu(3)
-                }
-                spacing: units.gu(2)
-
-                Label {
-                    text: hintRoot.title
-                    fontSize: "large"
-                    color: root.isDarkMode ? "#FFFFFF" : "#212121"
-                    font.weight: Font.Medium
-                    Behavior on color { ColorAnimation { duration: 250 } }
-                }
-
-                Label {
-                    width: parent.width
-                    text: hintRoot.message
-                    wrapMode: Text.WordWrap
-                    fontSize: "small"
-                    color: root.isDarkMode ? "#AAAAAA" : "#555555"
-                    lineHeight: 1.4
-                    Behavior on color { ColorAnimation { duration: 250 } }
-                }
-
-                Button {
-                    text: "Got it"
-                    color: "#2C5F2E"
-                    width: parent.width
-                    onClicked: hintRoot.visible = false
-                }
+                color: "#555555"
             }
         }
     }

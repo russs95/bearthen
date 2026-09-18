@@ -1,0 +1,30 @@
+.pragma library
+
+var strings = {
+    "Settings":                          "Settings",
+    "Appearance":                        "Appearance",
+    "Dark Mode":                         "Dark Mode",
+    "Dark theme active":                 "Dark theme active",
+    "Light theme active":                "Light theme active",
+    "Language":                          "Language",
+    "Reading":                           "Reading",
+    "Auto-Bookmark":                     "Auto-Bookmark",
+    "Save position when closing a book": "Save position when closing a book",
+    "Keep Screen Awake":                 "Keep Screen Awake",
+    "Prevent sleep while reading":       "Prevent sleep while reading",
+    "AI Connector":                      "AI Connector",
+    "AI Endpoint URL":                   "AI Endpoint URL",
+    "AI Features":                       "AI Features",
+    "Translate, summarise, define":      "Translate, summarise, define",
+    "About":                             "About",
+    "Open Source":                       "Open Source",
+    "Your Library":                      "Your Library",
+    "Your library is empty":             "Your library is empty",
+    "Discover Books":                    "Discover Books",
+    "Browse Free Books":                 "Browse Free Books",
+    "Import EPUB File":                  "Import EPUB File",
+    "Library":                           "Library",
+    "Discover":                          "Discover",
+    "Account":                           "Account",
+    "Mission":                           "Designed from the ground up to be Earth, Human & AI friendly. Setup the app to make your eyes happy."
+}
