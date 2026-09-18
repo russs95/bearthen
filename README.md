@@ -2,6 +2,8 @@
 
 Beta shell for EarthReader — an open source, privacy-respecting eBook reader for Ubuntu Touch.
 
+Compressed version from Oriz
+
 Built with Qt/QML and the Lomiri UI Toolkit. Powered by Readium Web for EPUB rendering.
 Authentication via Buwana OpenAuth. Book discovery via Project Gutenberg.
 
