@@ -1,7 +1,0 @@
-builder: pure
-kill: bearthen.russs95
-postbuild: echo 'Bearthen build complete.'
-ignore:
-  - .idea
-  - .git
-  - "*.md"

@@ -1,0 +1,773 @@
+import QtQuick 2.12
+import Ubuntu.Components 1.3
+import "../js/Library.js" as Library
+
+Page {
+    id: bookDetailPage
+
+    property var    book:             null
+    property bool   isDownloading:    false
+    property int    downloadProgress: 0
+    property string downloadStatus:   ""
+    property string bookDescription:  ""
+    property bool   descLoading:      false
+    property bool   alreadyInLib:     false
+    property bool   _showOpenRead:    false
+
+    // Track the two-phase download (cover then epub)
+    property string _pendingBookId:   ""
+    property string _pendingEpubUrl:  ""   // stored at download start, safe to use in async callbacks
+    property bool   _coverDone:       false
+
+    Component.onCompleted: { Library.init() }
+
+    // Fires every time a new book is pushed to this page
+    onBookChanged: {
+        if (!book) return
+        alreadyInLib    = Library.hasBook(book.id)
+        _showOpenRead   = false
+        bookDescription = ""
+        descLoading     = false
+        fetchDescription(book)
+    }
+
+    // ── Finish timer — brief pause so user sees 100% fill ───────────────────
+    Timer {
+        id: finishTimer
+        interval: 700; repeat: false
+        onTriggered: {
+            bookDetailPage.isDownloading = false
+            bookDetailPage.alreadyInLib  = true
+            openReadTimer.start()
+        }
+    }
+
+    // ── Open & Read activation — 2s after download completes ────────────────
+    Timer {
+        id: openReadTimer
+        interval: 2000; repeat: false
+        onTriggered: bookDetailPage._showOpenRead = true
+    }
+
+    header: PageHeader {
+        id: pageHeader
+        contents: Item {
+            anchors.fill: parent
+            Label {
+                anchors { verticalCenter: parent.verticalCenter
+                          left: parent.left; leftMargin: units.gu(1) }
+                text: "Search Results"
+                fontSize: "large"
+                font.weight: Font.Light
+                color: "#8B5A32"
+            }
+        }
+        StyleHints {
+            backgroundColor: root.isDarkMode ? "#1A1A1A" : "#F5F5F5"
+            dividerColor: "#2C5F2E"
+        }
+        leadingActionBar.actions: [
+            Action { iconName: "back"; text: "Back"; onTriggered: pageStack.pop() }
+        ]
+    }
+
+    Rectangle { anchors.fill: parent
+        color: root.isDarkMode ? "#121212" : "#FFFFFF"
+        Behavior on color { ColorAnimation { duration: 250 } } }
+
+    Flickable {
+        anchors { top: pageHeader.bottom; left: parent.left
+                  right: parent.right; bottom: parent.bottom }
+        contentHeight: contentCol.height + units.gu(4)
+        clip: true; flickableDirection: Flickable.VerticalFlick
+
+        Column {
+            id: contentCol
+            width: parent.width
+            spacing: 0
+
+            // ── Hero ──────────────────────────────────────────────────────────
+            Rectangle {
+                width: parent.width
+                height: heroRow.height + units.gu(4)
+                color: root.isDarkMode ? "#0D1F0D" : "#E8F5E9"
+                Behavior on color { ColorAnimation { duration: 250 } }
+
+                Row {
+                    id: heroRow
+                    anchors { top: parent.top; topMargin: units.gu(2)
+                              left: parent.left; leftMargin: units.gu(2)
+                              right: parent.right; rightMargin: units.gu(2) }
+                    spacing: units.gu(2)
+
+                    Rectangle {
+                        width: units.gu(14); height: units.gu(20)
+                        color: root.isDarkMode ? "#1A2E1A" : "#C8E6C9"
+                        radius: units.dp(6)
+                        anchors.verticalCenter: parent.verticalCenter
+                        clip: true
+
+                        Icon {
+                            anchors.centerIn: parent
+                            width: units.gu(8); height: units.gu(8)
+                            name: "stock_ebook"
+                            color: root.isDarkMode ? "#2C5F2E" : "#4CAF50"
+                            opacity: 0.25
+                        }
+                        Image {
+                            anchors.fill: parent; anchors.margins: units.dp(2)
+                            source: bookDetailPage.book ? (bookDetailPage.book.cover || "") : ""
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                        }
+                    }
+
+                    Column {
+                        width: parent.width - units.gu(16)
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: units.gu(0.8)
+
+                        Label {
+                            width: parent.width
+                            text: bookDetailPage.book ? (bookDetailPage.book.title || "") : ""
+                            fontSize: "large"; font.weight: Font.Medium
+                            color: root.isDarkMode ? "#FFFFFF" : "#212121"
+                            wrapMode: Text.WordWrap
+                            Behavior on color { ColorAnimation { duration: 250 } }
+                        }
+                        Label {
+                            width: parent.width
+                            text: bookDetailPage.book ? (bookDetailPage.book.author || "") : ""
+                            fontSize: "small"; color: "#4CAF50"; wrapMode: Text.WordWrap
+                        }
+                        Label {
+                            visible: bookDetailPage.book
+                                     ? (bookDetailPage.book.birth_year || 0) > 0 : false
+                            text: bookDetailPage.book
+                                  ? (bookDetailPage.book.birth_year + " – " +
+                                     (bookDetailPage.book.death_year
+                                      ? bookDetailPage.book.death_year : "present")) : ""
+                            fontSize: "x-small"
+                            color: root.isDarkMode ? "#888888" : "#999999"
+                        }
+                        Row {
+                            spacing: units.gu(0.5)
+                            Icon {
+                                width: units.gu(1.8); height: units.gu(1.8)
+                                name: "save"; color: "#888888"
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                            Label {
+                                text: bookDetailPage.book
+                                      ? ((bookDetailPage.book.downloads || 0)
+                                         .toLocaleString() + " downloads") : ""
+                                fontSize: "x-small"
+                                color: root.isDarkMode ? "#888888" : "#999999"
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                        }
+                        Row {
+                            spacing: units.gu(0.6)
+                            Rectangle {
+                                visible: bookDetailPage.book
+                                         ? bookDetailPage.book.hasEpub : false
+                                height: units.gu(2.4); width: epubLbl.width + units.gu(1.2)
+                                radius: height / 2; color: "#1E3A1E"
+                                Label { id: epubLbl; anchors.centerIn: parent
+                                        text: "EPUB"; fontSize: "x-small"; color: "#4CAF50" }
+                            }
+                            Rectangle {
+                                height: units.gu(2.4); width: freeLbl.width + units.gu(1.2)
+                                radius: height / 2; color: "#1E3A1E"
+                                Label { id: freeLbl; anchors.centerIn: parent
+                                        text: "Free"; fontSize: "x-small"; color: "#4CAF50" }
+                            }
+                            Rectangle {
+                                height: units.gu(2.4); width: langLbl.width + units.gu(1.2)
+                                radius: height / 2
+                                color: root.isDarkMode ? "#252525" : "#DDDDDD"
+                                Label { id: langLbl; anchors.centerIn: parent
+                                        text: bookDetailPage.book
+                                              ? (bookDetailPage.book.languages
+                                                 ? bookDetailPage.book.languages.join(", ").toUpperCase()
+                                                 : "EN") : "EN"
+                                        fontSize: "x-small"
+                                        color: root.isDarkMode ? "#AAAAAA" : "#666666" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Copyright banner ──────────────────────────────────────────────
+            Rectangle {
+                width: parent.width; height: units.gu(4)
+                color: bookDetailPage.book
+                       ? (bookDetailPage.book.copyright === false ? "#0A1A0A" : "#1A0A0A")
+                       : "#0A1A0A"
+                Row {
+                    anchors { left: parent.left; leftMargin: units.gu(2)
+                              verticalCenter: parent.verticalCenter }
+                    spacing: units.gu(0.8)
+                    Icon { width: units.gu(2); height: units.gu(2)
+                           name: "lock"; color: "#4CAF50"
+                           anchors.verticalCenter: parent.verticalCenter }
+                    Label {
+                        text: bookDetailPage.book
+                              ? (bookDetailPage.book.copyright === false
+                                 ? "Public Domain — free to read, share, and remix"
+                                 : "Under copyright — check usage rights") : ""
+                        fontSize: "x-small"; color: "#4CAF50"
+                        anchors.verticalCenter: parent.verticalCenter }
+                }
+            }
+
+            Rectangle { width: parent.width; height: units.dp(1)
+                        color: root.isDarkMode ? "#2A2A2A" : "#E0E0E0" }
+
+            // ── Description ───────────────────────────────────────────────────
+            Item {
+                width: parent.width; height: descLbl.height + units.gu(3)
+                Label {
+                    id: descLbl
+                    width: parent.width - units.gu(4)
+                    anchors { horizontalCenter: parent.horizontalCenter
+                              top: parent.top; topMargin: units.gu(1.5) }
+                    text: bookDetailPage.descLoading
+                          ? "Loading description…"
+                          : (bookDetailPage.bookDescription !== ""
+                             ? bookDetailPage.bookDescription
+                             : "No description available for this title.")
+                    fontSize: "small"
+                    color: bookDetailPage.descLoading ? "#888888"
+                           : (root.isDarkMode ? "#CCCCCC" : "#444444")
+                    wrapMode: Text.WordWrap; lineHeight: 1.6
+                    Behavior on color { ColorAnimation { duration: 250 } }
+                }
+            }
+
+            // ── Buttons + progress ────────────────────────────────────────────
+            Column {
+                width: parent.width; spacing: units.gu(0.8)
+                Item { width: parent.width; height: units.gu(0.5) }
+
+                // Add to Library
+                Rectangle {
+                    anchors { left: parent.left; right: parent.right
+                              leftMargin: units.gu(2); rightMargin: units.gu(2) }
+                    height: units.gu(5.5); radius: units.dp(8)
+                    visible: !bookDetailPage.alreadyInLib && !bookDetailPage.isDownloading
+                    color: bookDetailPage.book
+                           ? (bookDetailPage.book.hasEpub ? "#2C5F2E" : "#2A2A2A") : "#2A2A2A"
+                    Label {
+                        anchors.centerIn: parent
+                        text: bookDetailPage.book
+                              ? (bookDetailPage.book.hasEpub ? "Add to Library" : "No EPUB Available")
+                              : "Add to Library"
+                        fontSize: "medium"; font.weight: Font.Medium
+                        color: bookDetailPage.book
+                               ? (bookDetailPage.book.hasEpub ? "#FFFFFF" : "#666666") : "#FFFFFF"
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: bookDetailPage.book !== null &&
+                                 (bookDetailPage.book ? bookDetailPage.book.hasEpub : false)
+                        onClicked: startDownload(bookDetailPage.book)
+                    }
+                }
+
+                // Downloading state — spinner + progress bar same dimensions as button
+                Rectangle {
+                    id: downloadingBlock
+                    anchors { left: parent.left; right: parent.right
+                              leftMargin: units.gu(2); rightMargin: units.gu(2) }
+                    height: units.gu(5.5); radius: units.dp(8)
+                    visible: bookDetailPage.isDownloading
+                    // Dark track
+                    color: root.isDarkMode ? "#1A1A1A" : "#E8E8E8"
+                    clip: true
+
+                    // Mahogany brown fill — same border radius, grows left to right
+                    Rectangle {
+                        id: progressFill
+                        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                        width: parent.width * (bookDetailPage.downloadProgress / 100)
+                        radius: units.dp(8)
+                        color: "#6B3A20"
+                        Behavior on width { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                    }
+
+                    // Spinner + status text on top
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: units.gu(1)
+
+                        // Rotating spinner ring
+                        Rectangle {
+                            id: spinnerRing
+                            width: units.gu(2.2); height: units.gu(2.2)
+                            radius: width / 2
+                            color: "transparent"
+                            border.color: "#FFFFFF"; border.width: units.dp(1.5)
+                            anchors.verticalCenter: parent.verticalCenter
+                            opacity: 0.45
+
+                            // Cut a gap to make it look like a spinner arc
+                            Rectangle {
+                                width: units.dp(3); height: units.dp(3)
+                                color: progressFill.width > units.gu(2)
+                                       ? "#6B3A20"
+                                       : (root.isDarkMode ? "#1A1A1A" : "#E8E8E8")
+                                anchors { top: parent.top; horizontalCenter: parent.horizontalCenter }
+                            }
+
+                            RotationAnimation on rotation {
+                                running: bookDetailPage.isDownloading
+                                loops: Animation.Infinite
+                                from: 0; to: 360; duration: 900
+                            }
+                        }
+
+                        Label {
+                            text: bookDetailPage.downloadStatus !== ""
+                                  ? bookDetailPage.downloadStatus : "Starting..."
+                            fontSize: "small"; font.weight: Font.Light
+                            color: "#FFFFFF"; opacity: 0.65
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    // Percent label — right side
+                    Label {
+                        anchors { right: parent.right; rightMargin: units.gu(1.5)
+                                  verticalCenter: parent.verticalCenter }
+                        text: bookDetailPage.downloadProgress + "%"
+                        fontSize: "x-small"; color: "#FFFFFF"; opacity: 0.45
+                    }
+                }
+
+                // After download: "In your Library" → "Open & Read" after 2s
+                Rectangle {
+                    anchors { left: parent.left; right: parent.right
+                              leftMargin: units.gu(2); rightMargin: units.gu(2) }
+                    height: units.gu(5.5); radius: units.dp(8)
+                    visible: bookDetailPage.alreadyInLib && !bookDetailPage.isDownloading
+                    color: bookDetailPage._showOpenRead ? "#2C5F2E" : "#0D1F0D"
+                    border.color: bookDetailPage._showOpenRead ? "transparent" : "#2C5F2E"
+                    border.width: units.dp(1)
+                    Behavior on color { ColorAnimation { duration: 300 } }
+                    Row {
+                        anchors.centerIn: parent; spacing: units.gu(0.8)
+                        Icon {
+                            visible: bookDetailPage._showOpenRead
+                            width: units.gu(2.2); height: units.gu(2.2)
+                            name: "media-playback-start"; color: "#FFFFFF"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Label {
+                            text: bookDetailPage._showOpenRead ? "Open & Read" : "In your Library"
+                            fontSize: "small"
+                            font.weight: bookDetailPage._showOpenRead ? Font.Medium : Font.Light
+                            color: bookDetailPage._showOpenRead ? "#FFFFFF" : "#4CAF50"
+                            anchors.verticalCenter: parent.verticalCenter
+                            Behavior on color { ColorAnimation { duration: 300 } }
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: bookDetailPage._showOpenRead
+                        onClicked: {
+                            if (root && root.openReader) {
+                                var b = Library.getBook(bookDetailPage.book.id)
+                                if (b) root.openReader(b)
+                            }
+                        }
+                    }
+                }
+
+                // Add to Reading List — visible after download
+                Rectangle {
+                    anchors { left: parent.left; right: parent.right
+                              leftMargin: units.gu(2); rightMargin: units.gu(2) }
+                    height: units.gu(5.5); radius: units.dp(8)
+                    visible: bookDetailPage.alreadyInLib && !bookDetailPage.isDownloading
+                    color: "transparent"
+                    border.color: "#2C5F2E"; border.width: units.dp(1)
+                    Row {
+                        anchors.centerIn: parent; spacing: units.gu(0.8)
+                        Icon {
+                            width: units.gu(2); height: units.gu(2)
+                            name: "add"; color: "#4CAF50"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Label {
+                            text: "Add to Reading List"
+                            fontSize: "small"; color: "#4CAF50"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: root.showRlDialog(Library.getBook(bookDetailPage.book.id))
+                    }
+                }
+
+                // Delete from Library
+                Rectangle {
+                    anchors { left: parent.left; right: parent.right
+                              leftMargin: units.gu(2); rightMargin: units.gu(2) }
+                    height: units.gu(5.5); radius: units.dp(8)
+                    visible: bookDetailPage.alreadyInLib && !bookDetailPage.isDownloading
+                    color: "transparent"
+                    border.color: "#8B5A32"; border.width: units.dp(1)
+                    Row {
+                        anchors.centerIn: parent; spacing: units.gu(0.8)
+                        Icon {
+                            width: units.gu(2); height: units.gu(2)
+                            name: "close"; color: "#8B5A32"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Label {
+                            text: "Delete"
+                            fontSize: "small"; color: "#8B5A32"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: discoverDeleteDialog.visible = true
+                    }
+                }
+
+                Item { width: parent.width; height: units.gu(1) }
+            }
+
+            Rectangle { width: parent.width; height: units.dp(1)
+                        color: root.isDarkMode ? "#2A2A2A" : "#E0E0E0" }
+
+            // ── Subjects ──────────────────────────────────────────────────────
+            Item {
+                visible: bookDetailPage.book
+                         ? ((bookDetailPage.book.subjects || []).length > 0) : false
+                width: parent.width; height: subjectFlow.height + units.gu(2.4)
+                Flow {
+                    id: subjectFlow
+                    width: parent.width - units.gu(4)
+                    anchors { horizontalCenter: parent.horizontalCenter
+                              top: parent.top; topMargin: units.gu(1.2) }
+                    spacing: units.gu(0.6)
+                    Repeater {
+                        model: bookDetailPage.book
+                               ? (bookDetailPage.book.subjects || []).slice(0, 8) : []
+                        Rectangle {
+                            height: units.gu(2.8); width: subjLbl.width + units.gu(1.4)
+                            radius: height / 2
+                            color: root.isDarkMode ? "#222222" : "#EEEEEE"
+                            Label { id: subjLbl; anchors.centerIn: parent
+                                    text: modelData.length > 30
+                                          ? modelData.substr(0, 30) + "…" : modelData
+                                    fontSize: "x-small"
+                                    color: root.isDarkMode ? "#AAAAAA" : "#666666" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Delete confirmation dialog ────────────────────────────────────────────
+    Rectangle {
+        id: discoverDeleteDialog
+        visible: false; z: 50
+        anchors.fill: parent
+        color: "#CC000000"
+        MouseArea { anchors.fill: parent }
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width - units.gu(8)
+            radius: units.dp(12)
+            color: root.isDarkMode ? "#1E1E1E" : "#FFFFFF"
+            height: delCol.height + units.gu(4)
+            Column {
+                id: delCol
+                anchors { top: parent.top; topMargin: units.gu(2.5)
+                          left: parent.left; right: parent.right
+                          leftMargin: units.gu(2.5); rightMargin: units.gu(2.5) }
+                spacing: units.gu(1.5)
+                Label {
+                    width: parent.width; text: "Delete from Library?"
+                    fontSize: "large"; font.weight: Font.Medium
+                    color: root.isDarkMode ? "#FFFFFF" : "#212121"
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                Label {
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: bookDetailPage.book
+                          ? ("Remove \"" + bookDetailPage.book.title + "\" from your library?") : ""
+                    fontSize: "small"
+                    color: root.isDarkMode ? "#CCCCCC" : "#555555"
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                Rectangle {
+                    width: parent.width; height: units.gu(5.5); radius: units.dp(8)
+                    color: "#8B5A32"
+                    Label { anchors.centerIn: parent; text: "Delete"
+                            fontSize: "medium"; font.weight: Font.Medium; color: "#FFFFFF" }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (bookDetailPage.book) Library.removeBook(bookDetailPage.book.id)
+                            discoverDeleteDialog.visible = false
+                            bookDetailPage.alreadyInLib  = false
+                            bookDetailPage._showOpenRead = false
+                        }
+                    }
+                }
+                Rectangle {
+                    width: parent.width; height: units.gu(5.5); radius: units.dp(8)
+                    color: "transparent"
+                    border.color: "#8B5A32"; border.width: units.dp(1.5)
+                    Label { anchors.centerIn: parent; text: "Keep"
+                            fontSize: "small"; color: "#8B5A32" }
+                    MouseArea { anchors.fill: parent
+                                onClicked: discoverDeleteDialog.visible = false }
+                }
+                Item { width: 1; height: units.gu(0.5) }
+            }
+        }
+    }
+
+    // ── Functions ─────────────────────────────────────────────────────────────
+
+    function startDownload(book) {
+        if (!book || !book.epub_url) return
+        isDownloading    = true
+        downloadProgress = 3
+        downloadStatus   = "Adding to library..."
+        _pendingBookId   = book.id
+        _pendingEpubUrl  = book.epub_url || ""
+
+        // Insert SQLite record immediately — epub_url is always stored so we can
+        // stream the book even before the local file download completes.
+        Library.addBook({
+            id:             book.id,
+            title:          book.title,
+            author_id:      book.author_id,
+            author_display: book.author,
+            cover_url:      book.cover || "",
+            cover_local:    "",
+            epub_url:       book.epub_url,
+            file_path:      "",
+            source:         "gutenberg",
+            source_id:      book.source_id,
+            category:       _guessCategory(book.subjects),
+            subjects:       book.subjects || [],
+            language:       (book.languages && book.languages.length > 0) ? book.languages[0] : "en",
+            downloads:      book.downloads || 0,
+            copyright:      book.copyright,
+            birth_year:     book.birth_year || 0,
+            death_year:     book.death_year || 0
+        })
+
+        // Download via XHR — runs inside the app process which has the networking
+        // AppArmor policy. Lomiri.DownloadManager runs as a separate daemon with
+        // its own policy that cannot reliably reach external hosts.
+        if (book.cover && book.cover !== "") {
+            downloadStatus = "Downloading cover..."
+            _xhrFetch(book.cover, function(data) {
+                if (data) {
+                    var dest = Library.coverPath(book.id)
+                    if (_xhrPut(dest, data)) {
+                        Library.updateCoverLocal(_pendingBookId, dest)
+                        console.log("Cover saved:", dest)
+                    }
+                }
+                downloadProgress = 30
+                _downloadEpub()
+            }, function(err) {
+                console.log("Cover fetch failed:", err)
+                downloadProgress = 30
+                _downloadEpub()
+            }, false)  // cover = small file, weight 0-30%
+        } else {
+            downloadProgress = 30
+            _downloadEpub()
+        }
+    }
+
+    function _downloadEpub() {
+        downloadStatus = "Downloading book..."
+        _xhrFetch(_pendingEpubUrl, function(data) {
+            if (data) {
+                var dest = Library.bookPath(_pendingBookId)
+                if (_xhrPut(dest, data)) {
+                    Library.updateFilePath(_pendingBookId, dest)
+                    console.log("EPUB saved:", dest)
+                    downloadStatus = "Saved to device"
+                } else {
+                    downloadStatus = "Added to library"
+                }
+            } else {
+                downloadStatus = "Added to library"
+            }
+            downloadProgress = 100
+            finishTimer.start()
+        }, function(err) {
+            console.log("EPUB fetch failed:", err)
+            downloadStatus = "Added to library"
+            downloadProgress = 100
+            finishTimer.start()
+        }, true)  // epub = large file, weight 30-100%
+    }
+
+    // Async XHR GET with arraybuffer + progress reporting
+    // isLarge: if true, progress maps to 30-100%; if false, 0-30%
+    function _xhrFetch(url, onSuccess, onError, isLarge) {
+        var xhr = new XMLHttpRequest()
+        xhr.responseType = "arraybuffer"
+        xhr.onprogress = function(ev) {
+            if (ev.lengthComputable && ev.total > 0) {
+                var pct = ev.loaded / ev.total
+                bookDetailPage.downloadProgress = isLarge
+                    ? Math.round(30 + pct * 70)
+                    : Math.round(pct * 28)
+            }
+        }
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState !== XMLHttpRequest.DONE) return
+            console.log("XHR", url.substr(0, 60), "status:", xhr.status,
+                        "bytes:", xhr.response ? xhr.response.byteLength : 0)
+            if ((xhr.status === 200 || xhr.status === 0) && xhr.response
+                    && xhr.response.byteLength > 0) {
+                onSuccess(xhr.response)
+            } else {
+                onError("status " + xhr.status)
+            }
+        }
+        xhr.open("GET", url)
+        xhr.send()
+    }
+
+    // XHR PUT arraybuffer to file:// path.
+    // The parent dir MUST already exist — Qt cannot create intermediate dirs.
+    // APP_DATA_DIR (~/.local/share/bearthen.russs95) is guaranteed by Qt/LocalStorage.
+    // We write files flat into that dir (no subdirs) to avoid this constraint.
+    function _xhrPut(path, data) {
+        try {
+            var w = new XMLHttpRequest()
+            w.open("PUT", "file://" + path, false)
+            w.send(data)
+            var ok = (w.status === 0 || w.status === 200 || w.status === 201)
+            console.log("PUT", path.split("/").pop(), "status:", w.status, "ok:", ok)
+            return ok
+        } catch(e) {
+            console.log("PUT exception:", e)
+            return false
+        }
+    }
+
+    function fetchDescription(book) {
+        descLoading = true; bookDescription = ""
+
+        // ── Path 1: Gutenberg books — Open Library ID lookup (accurate) ─────────
+        var gutId = ""
+        if ((book.source || "") === "Project Gutenberg")
+            gutId = book.source_id || ""
+
+        if (gutId !== "") {
+            var xhr = new XMLHttpRequest()
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== XMLHttpRequest.DONE) return
+                descLoading = false
+                if (xhr.status === 200) {
+                    try {
+                        var data = JSON.parse(xhr.responseText)
+                        var doc = (data.docs && data.docs.length > 0) ? data.docs[0] : null
+                        if (doc) {
+                            var raw = ""
+                            if (doc.description) {
+                                raw = (typeof doc.description === "string")
+                                    ? doc.description : (doc.description.value || "")
+                            }
+                            if (raw.length < 20 && doc.first_sentence) {
+                                raw = (typeof doc.first_sentence === "string")
+                                    ? doc.first_sentence : (doc.first_sentence.value || "")
+                            }
+                            if (raw.length > 20) {
+                                bookDescription = _truncate(raw, 80); return
+                            }
+                        }
+                    } catch(e) {}
+                }
+                bookDescription = (book.subjects && book.subjects.length > 0)
+                    ? "Subjects: " + book.subjects.slice(0, 4).join(", ") + "." : ""
+            }
+            xhr.open("GET", "https://openlibrary.org/search.json?id_project_gutenberg="
+                     + encodeURIComponent(gutId)
+                     + "&fields=key,title,description,first_sentence")
+            xhr.send()
+            return
+        }
+
+        // ── Path 2: local / other — Wikipedia with author disambiguation ────────
+        var rawTitle = (book.title || "").split(";")[0].split(":")[0].trim()
+        var titleChars = []
+        for (var ci = 0; ci < rawTitle.length; ci++) {
+            var ch = rawTitle.charCodeAt(ci)
+            var isAlNum = (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122)
+                          || (ch >= 48 && ch <= 57) || ch === 32
+            titleChars.push(isAlNum ? rawTitle[ci] : " ")
+        }
+        var cleanTitle = titleChars.join("").trim()
+        var authorLast = (book.author || "").split(",")[0].trim()
+        var wikiQuery = (authorLast.length > 0 ? cleanTitle + " " + authorLast : cleanTitle)
+                        .replace(/ +/g, "_")
+        var xhr2 = new XMLHttpRequest()
+        xhr2.onreadystatechange = function() {
+            if (xhr2.readyState !== XMLHttpRequest.DONE) return
+            descLoading = false
+            if (xhr2.status === 200) {
+                try {
+                    var data = JSON.parse(xhr2.responseText)
+                    if (data.extract && data.extract.length > 20) {
+                        bookDescription = _truncate(data.extract, 80); return
+                    }
+                } catch(e) {}
+            }
+            bookDescription = (book.subjects && book.subjects.length > 0)
+                ? "Subjects: " + book.subjects.slice(0, 4).join(", ") + "." : ""
+        }
+        xhr2.open("GET", "https://en.wikipedia.org/api/rest_v1/page/summary/"
+                  + encodeURIComponent(wikiQuery))
+        xhr2.send()
+    }
+
+    function _truncate(text, maxWords) {
+        // Strip HTML tags without using > inside regex char class (Qt 5.12 parser bug)
+        var clean = text
+        while (clean.indexOf("<") !== -1) {
+            var open = clean.indexOf("<")
+            var close = clean.indexOf(">", open)
+            if (close === -1) break
+            clean = clean.substring(0, open) + " " + clean.substring(close + 1)
+        }
+        clean = clean.replace(/\n+/g, " ").trim()
+        var words = clean.split(/\s+/).filter(function(w) { return w.length > 0 })
+        return words.length <= maxWords ? clean : words.slice(0, maxWords).join(" ") + "…"
+    }
+
+    function _guessCategory(subjects) {
+        if (!subjects || subjects.length === 0) return "other"
+        var s = subjects.join(" ").toLowerCase()
+        if (s.indexOf("fiction") !== -1 || s.indexOf("novel") !== -1) return "fiction"
+        if (s.indexOf("poetry") !== -1) return "poetry"
+        if (s.indexOf("histor") !== -1) return "history"
+        if (s.indexOf("science") !== -1) return "science"
+        if (s.indexOf("philosoph") !== -1) return "philosophy"
+        if (s.indexOf("biograph") !== -1) return "biography"
+        if (s.indexOf("children") !== -1 || s.indexOf("juvenile") !== -1) return "children"
+        if (s.indexOf("earth") !== -1 || s.indexOf("ecology") !== -1) return "earthen"
+        return "non-fiction"
+    }
+
+}

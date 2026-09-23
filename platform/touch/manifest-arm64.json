@@ -1,0 +1,16 @@
+{
+    "name": "bearthen.russs95",
+    "description": "Bearthen — beta shell for EarthReader, an open source eBook reader for Ubuntu Touch.",
+    "architecture": "$ENV{CLICK_ARCH}",
+    "title": "Bearthen",
+    "framework": "ubuntu-touch-24.04-1.x-qml",
+    "version": "0.1.1",
+    "maintainer": "russs95 <your@email.com>",
+    "hooks": {
+        "bearthen": {
+            "apparmor": "bearthen.apparmor",
+            "desktop": "bearthen.desktop",
+            "content-hub": "bearthen-contenthub.json"
+        }
+    }
+}

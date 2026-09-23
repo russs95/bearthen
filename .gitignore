@@ -1,3 +1,6 @@
 build/
 *.click
 .idea/
+core/streamer/bin/
+.stage-bin/
+__pycache__/

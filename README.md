@@ -17,3 +17,8 @@ clickable install
 
 ## Vision
 [EarthReader Project Vision — coming soon]
+
+
+clickable build && clickable install
+v2:
+cd platform/touch && bash build-arm64.sh arm64 

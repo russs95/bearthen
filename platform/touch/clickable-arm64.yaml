@@ -1,0 +1,4 @@
+builder: precompiled
+prebuild: bash ../../../prebuild.sh
+kill: bearthen.russs95
+postbuild: bash ../../../postbuild.sh
