@@ -10,7 +10,7 @@
 
 ---
 
-## Confirmed: The Architecture Works... yeay!
+## Confirmed: The Architecture Works... yeay!!
 
 A full AppArmor exec spike was run on a live Google Pixel 3XL (arm64, Ubuntu Touch 24.04)
 before any v2 development began. All critical unknowns are resolved.
