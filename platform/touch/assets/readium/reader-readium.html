@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Bearthen Reader (Readium)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #111111;
+    color: #E8E0D0;
+    font-family: Georgia, serif;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  #loading {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #111111; z-index: 100; gap: 24px;
+  }
+  #loading .spinner {
+    width: 8vw; height: 8vw;
+    border: 0.4vw solid #2A1508;
+    border-top-color: #8B5A32;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #error {
+    position: fixed; inset: 0;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #111111; z-index: 100; gap: 16px; padding: 40px;
+  }
+  #error .err-title { color: #CC4444; font-size: 18px; font-family: sans-serif; }
+  #error .err-msg {
+    color: #666; font-size: 13px; font-family: sans-serif;
+    text-align: center; line-height: 1.7;
+  }
+
+  #D2Reader-Container {
+    position: fixed; inset: 0;
+    opacity: 0; transition: opacity 0.4s ease;
+  }
+  #D2Reader-Container.ready { opacity: 1; }
+  #iframe-wrapper { width: 100%; height: 100%; outline: none; }
+
+  /* Sits above the iframe D2Reader renders the book into. Touches on the
+     book content itself never reach a listener on the outer document —
+     an iframe is a separate document, so events don't bubble across that
+     boundary — so like reader.html's #touch-layer, this transparent
+     overlay intercepts taps/swipes before they ever reach the iframe. */
+  #touch-layer { position: fixed; inset: 0; z-index: 10; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+</div>
+
+<div id="error">
+  <div class="err-title">Could not open book</div>
+  <div class="err-msg" id="err-msg"></div>
+</div>
+
+<div id="D2Reader-Container">
+  <main tabindex="-1" id="iframe-wrapper"></main>
+</div>
+<div id="touch-layer"></div>
+
+<!--
+  A plain <script> tag, not type="module" + `import`: file:// URLs carry no
+  Content-Type header, and Chromium's strict MIME checking for ES module
+  scripts rejects them outright ("non-JavaScript MIME type of ''"), which
+  silently breaks D2Reader.load() in the WebView (confirmed on-device — the
+  splash spinner just spun forever, since `import` never resolved and
+  document.title never got the HIDE_NAV:1 book-ready signal). reader.js is
+  R2D2BC's own IIFE build for exactly this case: it assigns the global
+  `D2Reader` instead of using ES module `export`.
+-->
+<script src="./reader.js"></script>
+<script>
+  var D2Reader = window.D2Reader;
+
+  // ── URL params ─────────────────────────────────────────────────────────
+  // Mirrors reader.html's getParam() convention so ReaderPage.qml's existing
+  // param-building code needed only a new branch, not a rewrite.
+  function getParam(name) {
+    var m = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
+    return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : null;
+  }
+
+  var manifestUrl = getParam('manifest');
+  var startPct    = parseFloat(getParam('percent')) || 0;
+  var bookTitle   = getParam('title') || 'Book';
+
+  var reader = null;
+  var barsVisible = false;
+  var autoHideTimer = null;
+  var touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+  var _lastSentPct = -1;
+
+  function showError(msg) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = 'flex';
+    document.getElementById('err-msg').textContent = msg;
+  }
+
+  // ── Controls visibility — same tap-to-toggle convention as reader.html.
+  // No in-page toolbar: QML supplies the chrome (bars/nav), driven by these
+  // BARS signals exactly as the epub.js path already does.
+  function toggleBars() {
+    barsVisible = !barsVisible;
+    document.title = barsVisible ? 'BARS:1' : 'BARS:0';
+    scheduleAutoHide();
+  }
+  function scheduleAutoHide() {
+    if (autoHideTimer) clearTimeout(autoHideTimer);
+    if (!barsVisible) return;
+    autoHideTimer = setTimeout(function () {
+      barsVisible = false;
+      document.title = 'BARS:0';
+    }, 3500);
+  }
+
+  // ── Position reporting ────────────────────────────────────────────────
+  // Readium locators are not EPUB CFIs, so `cfi` is left empty for now —
+  // only `pct` (total progression) is reported. Restoring position on
+  // re-open is Step 10 (Readium theme & settings integration) territory;
+  // for now percent-based restore is out of scope for this first pass.
+  function reportPosition() {
+    if (!reader || !reader.currentLocator) return;
+    var loc = reader.currentLocator;
+    var pct = loc.locations && loc.locations.totalProgression != null
+      ? Math.round(loc.locations.totalProgression * 10000) / 100
+      : 0;
+    if (pct === _lastSentPct) return;
+    _lastSentPct = pct;
+    document.title = 'POS:' + JSON.stringify({ cfi: '', pct: pct });
+  }
+
+  // ── Touch handling — swipe = page turn, tap = toggle bars.
+  // Mirrors reader.html's thresholds (dt<400 swipe / dt<300 tap) exactly.
+  // Bound to #touch-layer, not document — see its CSS comment for why.
+  var touchLayer = document.getElementById('touch-layer');
+
+  touchLayer.addEventListener('touchstart', function (e) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchStartTime = Date.now();
+  }, { passive: true });
+
+  touchLayer.addEventListener('touchend', function (e) {
+    var dx = e.changedTouches[0].clientX - touchStartX;
+    var dy = e.changedTouches[0].clientY - touchStartY;
+    var dt = Date.now() - touchStartTime;
+    var ax = Math.abs(dx), ay = Math.abs(dy);
+
+    if (dt < 400 && ax > 40 && ax > ay * 1.5) {
+      if (reader) { if (dx < 0) reader.nextPage(); else reader.previousPage(); }
+      scheduleAutoHide();
+      return;
+    }
+    if (dt < 300 && ax < 12 && ay < 12) {
+      toggleBars();
+    }
+  }, { passive: true });
+
+  document.addEventListener('keydown', function (e) {
+    if (!reader) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); reader.nextPage(); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { e.preventDefault(); reader.previousPage(); }
+  });
+
+  // ── Init ──────────────────────────────────────────────────────────────
+  async function init() {
+    if (!manifestUrl) { showError('No manifest URL supplied.'); return; }
+    document.title = bookTitle;
+
+    try {
+      reader = await D2Reader.load({
+        url: new URL(manifestUrl),
+        injectables: [],
+        injectablesFixed: [],
+        useLocalStorage: false,
+      });
+      window.__reader = reader;
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('D2Reader-Container').classList.add('ready');
+
+      // Tell QML the book rendered (reuses the epub.js-path signal so
+      // ReaderPage's existing _bookReady/_checkHideCover/transition-cover
+      // logic needs no changes).
+      document.title = 'HIDE_NAV:1';
+
+      reader.addEventListener('resource.ready', reportPosition);
+      reader.addEventListener('click', reportPosition);
+      reportPosition();
+    } catch (err) {
+      console.error(err);
+      showError(err.message || String(err));
+    }
+  }
+
+  init();
+</script>
+
+</body>
+</html>

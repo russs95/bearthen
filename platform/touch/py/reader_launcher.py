@@ -1,4 +1,6 @@
 import base64
+import functools
+import http.server
 import os
 import platform
 import socket
@@ -12,6 +14,18 @@ except ImportError:
     pyotherside = None
 
 _proc = None
+
+# Serves platform/touch/assets/ over http://127.0.0.1:<port>/ — started once,
+# lazily, and never stopped (unlike the per-book streamer subprocess). Exists
+# because the Readium harness page (assets/readium/reader-readium.html) must
+# itself be loaded over http://, not file://: Chromium hard-blocks fetch()
+# from a file:// origin to any other origin (it isn't in the small list of
+# schemes CORS permits as a *source* — no response header can override this,
+# unlike an ordinary cross-origin block). The epub.js path never needed this
+# because reader.html doesn't fetch() anything cross-origin.
+_static_httpd = None
+_static_port = None
+_static_lock = threading.Lock()
 
 
 def _binary_path():
@@ -62,6 +76,56 @@ def _poll_ready(port, timeout=10.0):
     return False
 
 
+# Explicit extension -> Content-Type map for the static server. Deliberately
+# NOT relying on the stdlib `mimetypes` module: SimpleHTTPRequestHandler's
+# default guess_type() lazily reads /etc/mime.types (and other system paths)
+# on first call to build its lookup table, and that read is denied under the
+# click app's AppArmor confinement (PermissionError: /etc/mime.types) —
+# caught on real hardware; it crashed the request mid-response, and the
+# WebView just saw net::ERR_EMPTY_RESPONSE with no indication why.
+_MIME_TYPES = {
+    '.html': 'text/html',
+    '.htm':  'text/html',
+    '.js':   'application/javascript',
+    '.mjs':  'application/javascript',
+    '.css':  'text/css',
+    '.json': 'application/json',
+    '.svg':  'image/svg+xml',
+    '.png':  'image/png',
+    '.jpg':  'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.woff':  'font/woff',
+    '.woff2': 'font/woff2',
+    '.ttf':   'font/ttf',
+}
+
+
+class _StaticHandler(http.server.SimpleHTTPRequestHandler):
+    def guess_type(self, path):
+        ext = os.path.splitext(str(path))[1].lower()
+        return _MIME_TYPES.get(ext, 'application/octet-stream')
+
+    def log_message(self, format, *args):
+        pass  # silence per-request stderr logging — noisy in clickable logs
+
+
+def _ensure_static_server():
+    """Start the assets/ static file server on first use; idempotent."""
+    global _static_httpd, _static_port
+    with _static_lock:
+        if _static_httpd is not None:
+            return _static_port
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        app_root   = os.path.dirname(script_dir)
+        assets_dir = os.path.join(app_root, 'assets')
+        handler = functools.partial(_StaticHandler, directory=assets_dir)
+        httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        _static_port = httpd.server_address[1]
+        _static_httpd = httpd
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        return _static_port
+
+
 def _manifest_url(port, fs_path):
     """Build the manifest URL for the given served file.
 
@@ -92,8 +156,9 @@ def _run(epub_path, port, binary):
         _proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if _poll_ready(port):
+            static_port = _ensure_static_server()
             if pyotherside:
-                pyotherside.send('streamer_ready', port, _manifest_url(port, fs_path))
+                pyotherside.send('streamer_ready', port, _manifest_url(port, fs_path), static_port)
         else:
             rc = _proc.poll()
             msg = 'streamer did not come up on port ' + str(port)

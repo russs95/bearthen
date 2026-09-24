@@ -1,6 +1,6 @@
 # Bearthen 2.0 / 2.1 / 2.2 / 2.3 — Full Platform Roadmap
 
-> **Status (2026-09-23):** Stage 1 (repo refactor) done. Stage 3 (cross-compile) done. Stage 4 (PyOtherSide reader launcher) done and confirmed on real hardware — see the note under Stage 4 below and `bearthen-2-step-by-step.md` Step 6. Next: Stage 5 (bundle Readium Web JS).
+> **Status (2026-09-24):** Stages 1 and 3–6 done, all confirmed on real hardware (Pixel 3a). Stage 6 in particular — a real EPUB actually opening and paginating through the Readium/`D2Reader` engine, not just epub.js — is confirmed working: cover + reflowable text render, swipe turns pages, tap toggles the top bar. Getting there surfaced four distinct real bugs along the way (all fixed — see the note under Stage 6 and `CLAUDE.md`'s "Readium Web JS shell" section). **Next: Stage 8** (TOC/bookmark/settings controls for the Readium path — currently missing, not broken; see the scope note under Stage 8).
 > **v2.0:** Ubuntu Touch — Readium + r2-streamer-go (arm64 + armhf)
 > **v2.1:** Bearthen Sync — Buwana SSO + cloud library at reader.earthen.io
 > **v2.2:** Ubuntu Desktop — Electron snap with Buwana sync built in
@@ -282,6 +282,18 @@ cp -r dist/ ../core/readium/
 
 Monitor package size against the ≤ 22 MB arm64 target after this stage.
 
+> ✅ **Done (2026-09-23).** `core/readium/` now holds a built, trimmed,
+> minified R2D2BC (`@d-i-t-a/reader` / `D2Reader`) bundle — **2.3MB**, well
+> under budget. See `core/readium/README.md` for full build provenance and
+> the R2D2BC-vs-`readium/web` evaluation (the "officially paired" toolkit for
+> our `readium/cli`-based streamer turned out to be a library-only toolkit
+> requiring a custom reader UI; R2D2BC is a drop-in reader shell and consumes
+> the same standard RWPM manifest format regardless of server, so it works
+> unmodified). Verified end-to-end with a headless-Chrome screenshot test:
+> `D2Reader.load()` pointed at a local `r2-streamer-amd64 serve` instance's
+> manifest URL rendered the real book cover and parsed its 9-item TOC.
+> WebView integration into `ReaderPage` is Stage 6 (Step 7), not yet done.
+
 ---
 
 ### Stage 6 — Connect ReaderPage
@@ -292,6 +304,43 @@ Monitor package size against the ≤ 22 MB arm64 target after this stage.
 EPUB version detected at import time and stored in `books_tb`. ReaderPage branches
 on `book.epub_version >= 3.0`. The existing `document.title` signal protocol
 (`BARS:`, `HIDE_NAV:`, `PROGRESS:`, `FONTSIZE:`, etc.) maps to Readium Web JS events.
+
+> ✅ **Done, confirmed on physical hardware (2026-09-24).** `ReaderPage`
+> now branches to a new harness page, `platform/touch/assets/readium/
+> reader-readium.html`, which loads `D2Reader` against the streamer's manifest
+> URL — instead of `book.epub_version >= 3.0` (not yet tracked in `books_tb`),
+> a `_useReadium` debug flag (default `true`) forces the branch for every
+> local EPUB while the streamer is available, per the step-by-step plan's own
+> suggestion for this stage. Falls back to epub.js automatically on any
+> streamer/launcher failure, and Gutenberg (remote-only) books always use
+> epub.js regardless of the flag, since the streamer only serves local files
+> today.
+>
+> Getting this working on real hardware surfaced four distinct, real bugs
+> (not device flakiness) — all fixed and documented in `CLAUDE.md`'s
+> "Readium Web JS shell" section and `core/readium/README.md`: (1) ES module
+> `<script type="module">` fails MIME checking over `file://` — switched to
+> R2D2BC's IIFE build; (2) `file://` pages can't `fetch()` cross-origin at
+> all in Chromium (not a CORS-header problem) — `reader_launcher.py` now
+> also runs a small static HTTP server so the harness itself loads over
+> `http://`; (3) Python's `http.server` default MIME guesser reads
+> `/etc/mime.types`, denied under AppArmor — replaced with an explicit
+> extension map; (4) touch/tap listeners on `document` don't fire for taps
+> landing inside D2Reader's iframe — added a `#touch-layer` overlay div,
+> the same pattern `reader.html` already used for epub.js.
+>
+> **Confirmed working on a Pixel 3a**: book renders (cover + reflowable
+> text), swipe left/right turns pages, tap toggles the QML top bar.
+> **Not yet working** (expected — scoped out of this stage, see Stage 8
+> below): the TOC and bookmark buttons call `readerToc.toggle()` /
+> `readerBookmarks.save()`, objects `reader.html` defines for itself that
+> `reader-readium.html` has no equivalent of yet; there's also no in-page
+> settings panel (font/theme/spacing) at all in the Readium harness — that
+> whole panel is `reader.html`'s own hand-built HTML/CSS/JS, not a
+> Readium/D2Reader feature, and needs an equivalent built from scratch for
+> the Readium path. Only `BARS:`, `HIDE_NAV:1` (book-ready), and a
+> percent-only `POS:` (no CFI — Readium locators aren't EPUB CFIs) are wired
+> so far.
 
 ---
 
@@ -315,6 +364,18 @@ Readium CSS custom properties replace epub.js `!important` injection. Font size,
 family, theme, and spacing map to `--RS__*` variables injected via `runJavaScript`.
 Swipe navigation and progress reporting carry forward from v1.x. A small
 CFI → percentage conversion layer maintains the existing `read_percent` field.
+
+> **Scope clarified 2026-09-24, after Stage 6 confirmed on hardware.** Swipe
+> navigation and bars-toggle already carry forward (done in Stage 6). What's
+> actually missing, concretely: `reader-readium.html` needs `readerToc` and
+> `readerBookmarks` objects (or equivalents) so the existing QML TOC/bookmark
+> buttons work — they currently call into globals that don't exist in the
+> Readium harness and silently no-op. It also needs an entire settings panel
+> built from scratch: `reader.html`'s font-size/family/theme/spacing controls
+> are its own hand-built in-page HTML/CSS/JS, not something Readium/D2Reader
+> provides — there's no equivalent markup in `reader-readium.html` at all yet.
+> D2Reader's own API (`tableOfContents`, bookmarks, `applyUserSettings()`) is
+> already available to build all of this on top of; it just hasn't been done.
 
 ---
 

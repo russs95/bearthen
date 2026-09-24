@@ -15,9 +15,16 @@ Page {
     property bool _showCover:       false  // true after first 400ms (cover image phase)
     property string _liveCfi:       ""     // last CFI received via POS signal; written to DB on exit
     property real   _livePct:       0      // matching percent for _liveCfi
-    property int    _streamerPort:  0      // set when r2-streamer is ready; used in Stage 6
-    property string _streamerManifestUrl: "" // full manifest URL from the ready signal; used in Stage 6
+    property int    _streamerPort:  0      // set when r2-streamer is ready
+    property string _streamerManifestUrl: "" // full manifest URL from the ready signal
     property string _pendingStreamerEpub: "" // queued when openBook() fires before streamerLoader is ready
+    // Step 7 debug default: force the Readium path for local EPUBs whenever the
+    // streamer is available, so it can be exercised on every book during
+    // development. Replace with `book.epub_version >= 3.0` once epub_version is
+    // tracked in books_tb (see roadmap Stage 6). Remote (Gutenberg) books always
+    // use epub.js regardless of this flag — the streamer only serves local files
+    // today. Falls back to epub.js automatically if the streamer errors.
+    property bool   _useReadium:    true
 
     // Hide transition cover only when BOTH the book is rendered AND splash phases done.
     function _checkHideCover() {
@@ -57,8 +64,13 @@ Page {
         webView.url         = "about:blank"
         book                = bookObj
         coverPhase1Timer.restart()  // start the cover splash sequence
-        // Launch r2-streamer in parallel (epub.js reader still loads via urlLoadTimer).
-        // Stage 6 will switch the URL to the streamer's localhost endpoint.
+        // Local EPUB + Readium enabled: launch r2-streamer and wait for its
+        // `ready` signal (streamerLoader.onLoaded below) to load the Readium
+        // harness — no urlLoadTimer/epub.js in this path unless the streamer
+        // errors, in which case the error handler falls back to epub.js.
+        // Remote (Gutenberg) books and the epub.js-only fallback go through
+        // urlLoadTimer as before — the streamer only serves local files today.
+        var useReadiumForThisBook = _useReadium && bookObj && bookObj.file_path
         if (bookObj && bookObj.file_path) {
             if (streamerLoader.status === Loader.Ready && streamerLoader.item) {
                 streamerLoader.item.start(bookObj.file_path)
@@ -70,10 +82,15 @@ Page {
                     streamerLoader.active = true
             }
         }
-        // Defer URL construction — Qt Quick defers layout recalculation, so
-        // webView.height is stale immediately after _readerMode/FullScreen change.
-        // 120ms gives layout + window manager time to settle before we measure.
-        urlLoadTimer.restart()
+        if (!useReadiumForThisBook) {
+            // Defer URL construction — Qt Quick defers layout recalculation, so
+            // webView.height is stale immediately after _readerMode/FullScreen change.
+            // 120ms gives layout + window manager time to settle before we measure.
+            urlLoadTimer.restart()
+        }
+        // else: wait for streamerLoader's ready/error signal (see below) —
+        // by the time it fires (~1s+), layout has long since settled, so no
+        // timer is needed before reading webView.width/height for the URL.
     }
 
     // Build and load the reader URL. Called by urlLoadTimer, not onBookChanged,
@@ -110,6 +127,44 @@ Page {
                 + "&vw="         + vw
                 + "&vh="         + vh
         if (cfi)                  url += "&cfi="        + encodeURIComponent(cfi)
+        if (b.reader_fontsize)    url += "&fontsize="   + b.reader_fontsize
+        if (b.reader_fontfamily)  url += "&fontfamily=" + b.reader_fontfamily
+        if (b.reader_theme)       url += "&theme="      + b.reader_theme
+        if (b.reader_spacing)     url += "&spacing="    + b.reader_spacing
+        if (b.reader_margins)     url += "&margins="    + b.reader_margins
+
+        console.log("ReaderPage: loading", url)
+        webView.url = url
+    }
+
+    // Build and load the Readium (D2Reader) harness URL. Called once the
+    // r2-streamer signals `ready` with a manifest URL (see streamerLoader
+    // below) — by then layout has long settled, so webView.width/height are
+    // safe to read directly without a timer.
+    //
+    // Loaded over http://127.0.0.1:<staticPort>/, NOT file:// — Chromium
+    // hard-blocks fetch() from a file:// origin to any other origin (it
+    // isn't in the handful of schemes CORS permits as a *source*, regardless
+    // of the target's Access-Control-Allow-Origin header). D2Reader fetches
+    // the manifest via fetch(), so a file://-loaded harness gets "blocked by
+    // CORS policy" and never renders. reader_launcher.py's static server
+    // (assets/ served over http://) exists solely to work around this.
+    function _loadReadiumUrl(manifestUrl, staticPort) {
+        if (!book) return
+        var b  = book
+        var vw = Math.round(webView.width)
+        var vh = Math.round(webView.height)
+        console.log("ReaderPage: loading Readium", vw + "x" + vh, "manifest:", manifestUrl)
+
+        var htmlUrl = "http://127.0.0.1:" + staticPort + "/readium/reader-readium.html"
+        var pct     = b.read_percent || 0
+
+        var url = htmlUrl
+                + "?manifest="   + encodeURIComponent(manifestUrl)
+                + "&title="      + encodeURIComponent(b.title || "")
+                + "&percent="    + pct
+                + "&vw="         + vw
+                + "&vh="         + vh
         if (b.reader_fontsize)    url += "&fontsize="   + b.reader_fontsize
         if (b.reader_fontfamily)  url += "&fontfamily=" + b.reader_fontfamily
         if (b.reader_theme)       url += "&theme="      + b.reader_theme
@@ -185,20 +240,43 @@ Page {
                         status === Loader.Null    ? "(Null)"    :
                         status === Loader.Ready   ? "(Ready)"   :
                         status === Loader.Loading ? "(Loading)" : "(Error)")
-            if (status === Loader.Error)
+            if (status === Loader.Error) {
                 console.log("StreamerLauncher: failed to load — epub.js only mode")
+                // The Loader itself failed (e.g. io.thp.pyotherside unavailable) —
+                // item.ready/item.error will never fire, so fall back here too,
+                // or a Readium-eligible book would be stuck on a blank screen.
+                if (readerPage._useReadium && readerPage.book && readerPage.visible
+                        && webView.url.toString() === "about:blank") {
+                    console.log("ReaderPage: falling back to epub.js")
+                    readerPage._loadReaderUrl()
+                }
+            }
         }
         onLoaded: {
             console.log("StreamerLauncher: component loaded OK")
-            item.ready.connect(function(port, manifestUrl) {
+            item.ready.connect(function(port, manifestUrl, staticPort) {
                 readerPage._streamerPort = port
                 readerPage._streamerManifestUrl = manifestUrl
                 console.log("ReaderPage: r2-streamer ready on port", port,
-                            "manifest:", manifestUrl,
-                            "— reserved for Readium in Stage 6")
+                            "manifest:", manifestUrl, "static server port:", staticPort)
+                // Only act if this signal belongs to the book still open (guards
+                // against a late signal arriving after the user navigated away
+                // or opened a different book) and we haven't already loaded
+                // something (e.g. an error already triggered the epub.js fallback).
+                if (readerPage._useReadium && readerPage.book && readerPage.visible
+                        && webView.url.toString() === "about:blank") {
+                    readerPage._loadReadiumUrl(manifestUrl, staticPort)
+                }
             })
             item.error.connect(function(msg) {
                 console.log("ReaderPage: r2-streamer error:", msg)
+                // Streamer failed — fall back to epub.js so the user isn't
+                // left on a blank screen. Only if nothing has loaded yet.
+                if (readerPage._useReadium && readerPage.book && readerPage.visible
+                        && webView.url.toString() === "about:blank") {
+                    console.log("ReaderPage: falling back to epub.js")
+                    readerPage._loadReaderUrl()
+                }
             })
             // Dispatch epub path that arrived before the Loader was ready
             if (readerPage._pendingStreamerEpub !== "") {

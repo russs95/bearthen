@@ -8,7 +8,7 @@ import io.thp.pyotherside 1.4
 Item {
     id: streamerLauncher
 
-    signal ready(int port, string manifestUrl)
+    signal ready(int port, string manifestUrl, int staticPort)
     signal error(string message)
 
     property bool   _moduleReady: false
@@ -43,11 +43,12 @@ Item {
         }
 
         onReceived: {
-            // pyotherside.send('streamer_ready', port, manifestUrl)
+            // pyotherside.send('streamer_ready', port, manifestUrl, staticPort)
             // pyotherside.send('streamer_error', message)
             if (data[0] === "streamer_ready") {
-                console.log("StreamerLauncher: ready on port", data[1], "manifest:", data[2])
-                streamerLauncher.ready(data[1], data[2])
+                console.log("StreamerLauncher: ready on port", data[1],
+                            "manifest:", data[2], "static server port:", data[3])
+                streamerLauncher.ready(data[1], data[2], data[3])
             } else if (data[0] === "streamer_error") {
                 console.log("StreamerLauncher: error:", data[1])
                 streamerLauncher.error(data[1])
